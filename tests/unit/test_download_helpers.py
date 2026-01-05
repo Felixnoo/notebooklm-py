@@ -1,7 +1,7 @@
 """Tests for download helper functions."""
 
 import pytest
-from notebooklm.download_helpers import select_artifact
+from notebooklm.download_helpers import select_artifact, artifact_title_to_filename
 
 
 class TestSelectArtifact:
@@ -125,3 +125,64 @@ class TestSelectArtifact:
 
         with pytest.raises(ValueError, match="Cannot specify both"):
             select_artifact(artifacts, latest=True, earliest=True)
+
+
+class TestArtifactTitleToFilename:
+    def test_simple_title(self):
+        """Should handle simple ASCII title."""
+        result = artifact_title_to_filename("Deep Dive Overview", ".mp3", set())
+        assert result == "Deep Dive Overview.mp3"
+
+    def test_sanitize_special_characters(self):
+        """Should remove invalid filename characters."""
+        result = artifact_title_to_filename("My/Awesome\\Talk: Part 1?", ".mp3", set())
+        assert result == "My_Awesome_Talk_ Part 1_.mp3"
+
+    def test_handle_duplicate_titles(self):
+        """Should append (2), (3) for duplicate titles."""
+        existing = {"Overview.mp3"}
+
+        result = artifact_title_to_filename("Overview", ".mp3", existing)
+        assert result == "Overview (2).mp3"
+
+        existing.add("Overview (2).mp3")
+        result = artifact_title_to_filename("Overview", ".mp3", existing)
+        assert result == "Overview (3).mp3"
+
+    def test_handle_existing_with_number(self):
+        """Should handle titles that already have (N) pattern."""
+        existing = {"Report (1).pdf"}
+
+        result = artifact_title_to_filename("Report (1)", ".pdf", existing)
+        assert result == "Report (1) (2).pdf"
+
+    def test_long_filename_truncation(self):
+        """Should truncate very long filenames."""
+        long_title = "A" * 300
+        result = artifact_title_to_filename(long_title, ".mp3", set())
+
+        # Most filesystems support 255 bytes max
+        assert len(result) <= 255
+        assert result.endswith(".mp3")
+
+    def test_empty_title_after_sanitization(self):
+        """Should handle titles that become empty after sanitization."""
+        result = artifact_title_to_filename("...", ".mp3", set())
+        assert result == "untitled.mp3"
+
+        result = artifact_title_to_filename("   ", ".pdf", set())
+        assert result == "untitled.pdf"
+
+        result = artifact_title_to_filename(".", ".txt", set())
+        assert result == "untitled.txt"
+
+    def test_duplicate_with_long_truncated_title(self):
+        """Should handle duplicates even when base is at max length."""
+        long_title = "A" * 240
+        existing = {f"{'A' * 233}.mp3"}
+
+        result = artifact_title_to_filename(long_title, ".mp3", existing)
+
+        # Should not exceed filesystem limits
+        assert len(result) <= 255
+        assert result.endswith(" (2).mp3")

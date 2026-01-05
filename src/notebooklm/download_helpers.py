@@ -1,6 +1,10 @@
 """Helper functions for download commands."""
 
-from typing import Any, Optional, TypedDict
+import re
+from typing import Optional, TypedDict
+
+# Reserve space for " (999)" suffix when handling duplicate filenames
+DUPLICATE_SUFFIX_RESERVE = 7
 
 
 class ArtifactDict(TypedDict):
@@ -80,3 +84,52 @@ def select_artifact(
         # Default to latest (latest=True by default)
         selected = max(filtered, key=lambda a: a["created_at"])
         return selected, f"latest of {count} artifacts"
+
+
+def artifact_title_to_filename(
+    title: str,
+    extension: str,
+    existing_files: set[str],
+    max_length: int = 240,  # Leave room for extension and (N) suffix
+) -> str:
+    """
+    Convert artifact title to safe filename.
+
+    Args:
+        title: Artifact title
+        extension: File extension (with leading dot, e.g., ".mp3")
+        existing_files: Set of filenames already used
+        max_length: Maximum filename length before extension
+
+    Returns:
+        Sanitized filename with extension
+    """
+    # Sanitize: replace invalid chars with underscore
+    # Invalid chars: / \ : * ? " < > |
+    sanitized = re.sub(r'[/\\:*?"<>|]', '_', title)
+
+    # Remove leading/trailing whitespace and dots
+    sanitized = sanitized.strip('. ')
+
+    # Fallback for empty titles
+    if not sanitized:
+        sanitized = "untitled"
+
+    # Reserve space for duplicate suffix
+    effective_max = max_length - DUPLICATE_SUFFIX_RESERVE
+
+    # Truncate if too long
+    if len(sanitized) > effective_max:
+        sanitized = sanitized[:effective_max].rstrip('. ')
+
+    # Build initial filename
+    base = sanitized
+    filename = f"{base}{extension}"
+
+    # Handle duplicates with (2), (3), etc.
+    counter = 2
+    while filename in existing_files:
+        filename = f"{base} ({counter}){extension}"
+        counter += 1
+
+    return filename

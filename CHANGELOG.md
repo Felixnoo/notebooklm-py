@@ -48,4 +48,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RPC method IDs may change without notice (reverse-engineered API)
 - Both quiz and flashcard use type 4 internally, distinguished by title
 
-[0.1.0]: https://github.com/teng-lin/notion-notebooklm/releases/tag/v0.1.0
+[0.1.0]: https://github.com/teng-lin/notebooklm-client/releases/tag/v0.1.0

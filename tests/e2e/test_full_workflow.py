@@ -138,9 +138,13 @@ class TestNotebookWorkflow:
 @pytest.mark.e2e
 @pytest.mark.slow
 class TestArtifactGeneration:
-    """Test artifact generation (audio, slides). These are slow tests."""
+    """Test artifact generation (audio, slide deck). These are slow tests.
+
+    Note: These tests may fail due to API rate limiting or quota restrictions.
+    """
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Audio API may be rate-limited or quota-restricted")
     async def test_generate_audio_starts(
         self, auth_cookies, created_notebooks, cleanup_notebooks
     ):

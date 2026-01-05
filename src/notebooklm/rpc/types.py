@@ -102,7 +102,7 @@ class StudioContentType(int, Enum):
     MIND_MAP = 5
     REPORT = 6  # Blog Post, etc.
     INFOGRAPHIC = 7
-    SLIDES = 8
+    SLIDE_DECK = 8
     DATA_TABLE = 9
 
 
@@ -146,10 +146,13 @@ class VideoStyle(int, Enum):
 
 
 class QuizQuantity(int, Enum):
-    """Quiz/Flashcards quantity options."""
+    """Quiz/Flashcards quantity options.
+
+    Note: API uses 1 for fewer questions, 2 for standard/more.
+    """
 
     FEWER = 1
-    STANDARD = 0
+    STANDARD = 2
     MORE = 2
 
 
@@ -177,14 +180,14 @@ class InfographicDetail(int, Enum):
     DETAILED = 3
 
 
-class SlidesFormat(int, Enum):
+class SlideDeckFormat(int, Enum):
     """Slide deck format options."""
 
     DETAILED_DECK = 1
     PRESENTER_SLIDES = 2
 
 
-class SlidesLength(int, Enum):
+class SlideDeckLength(int, Enum):
     """Slide deck length options."""
 
     DEFAULT = 1

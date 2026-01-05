@@ -17,8 +17,8 @@ from .rpc import (
     QuizDifficulty,
     InfographicOrientation,
     InfographicDetail,
-    SlidesFormat,
-    SlidesLength,
+    SlideDeckFormat,
+    SlideDeckLength,
     BATCHEXECUTE_URL,
     QUERY_URL,
     encode_rpc_request,
@@ -892,6 +892,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1120,6 +1121,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1223,24 +1225,24 @@ class NotebookLMClient:
         """Generate a timeline from notebook content."""
         return await self._act_on_sources(notebook_id, "timeline", source_ids)
 
-    async def generate_slides(
+    async def generate_slide_deck(
         self,
         notebook_id: str,
         source_ids: Optional[list[str]] = None,
         language: str = "en",
         instructions: Optional[str] = None,
-        slides_format: Optional[SlidesFormat] = None,
-        slides_length: Optional[SlidesLength] = None,
+        slide_deck_format: Optional[SlideDeckFormat] = None,
+        slide_deck_length: Optional[SlideDeckLength] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Generate slides from notebook content.
+        """Generate slide deck from notebook content.
 
         Args:
             notebook_id: The notebook ID.
             source_ids: List of source IDs to include. If None, uses all sources.
             language: Language code (default: "en").
-            instructions: Custom instructions for slide generation.
-            slides_format: DETAILED_DECK or PRESENTER_SLIDES.
-            slides_length: DEFAULT or SHORT.
+            instructions: Custom instructions for slide deck generation.
+            slide_deck_format: DETAILED_DECK or PRESENTER_SLIDES.
+            slide_deck_length: DEFAULT or SHORT.
 
         Returns:
             Dictionary containing artifact metadata with keys:
@@ -1256,8 +1258,8 @@ class NotebookLMClient:
 
         source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
 
-        format_code = slides_format.value if slides_format else 1
-        length_code = slides_length.value if slides_length else 1
+        format_code = slide_deck_format.value if slide_deck_format else 1
+        length_code = slide_deck_length.value if slide_deck_length else 1
 
         params = [
             [2],
@@ -1286,6 +1288,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1330,7 +1333,8 @@ class NotebookLMClient:
 
         source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
 
-        quantity_code = quantity.value if quantity else None
+        # Default to STANDARD quantity (2) if not specified - API doesn't accept 0
+        quantity_code = quantity.value if quantity else 2
         difficulty_code = difficulty.value if difficulty else 2
 
         params = [
@@ -1365,6 +1369,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1409,7 +1414,8 @@ class NotebookLMClient:
 
         source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
 
-        quantity_code = quantity.value if quantity else None
+        # Default to STANDARD quantity (2) if not specified - API doesn't accept 0
+        quantity_code = quantity.value if quantity else 2
         difficulty_code = difficulty.value if difficulty else 2
 
         params = [
@@ -1443,6 +1449,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1498,7 +1505,7 @@ class NotebookLMClient:
             [
                 None,
                 None,
-                7,
+                7,  # StudioContentType.INFOGRAPHIC
                 source_ids_triple,
                 None,
                 None,
@@ -1510,13 +1517,17 @@ class NotebookLMClient:
                 None,
                 None,
                 None,
-                [[instructions, language, None, orientation_code, detail_code]],
+                [
+                    None,
+                    [instructions, language, None, orientation_code, detail_code],
+                ],
             ],
         ]
         result = await self._rpc_call(
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1588,6 +1599,7 @@ class NotebookLMClient:
             RPCMethod.CREATE_VIDEO,
             params,
             source_path=f"/notebook/{notebook_id}",
+            allow_null=True,  # Google may return null on rate limit or quota errors
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -1696,9 +1708,22 @@ class NotebookLMClient:
         )
 
     async def generate_mind_map(
-        self, notebook_id: str, source_ids: Optional[list[str]] = None
-    ) -> Any:
-        """Generate an interactive mind map from notebook content."""
+        self,
+        notebook_id: str,
+        source_ids: Optional[list[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate an interactive mind map from notebook content.
+
+        Args:
+            notebook_id: The notebook ID.
+            source_ids: List of source IDs to include. If None, uses all sources.
+
+        Returns:
+            Dictionary containing:
+                - mind_map: The mind map data (JSON structure with name/children)
+                - note_id: ID of the saved note (if available)
+            Returns None if generation fails.
+        """
         if source_ids is None:
             notebook_data = await self.get_notebook(notebook_id)
             source_ids = self._extract_source_ids(notebook_data)
@@ -1717,12 +1742,37 @@ class NotebookLMClient:
             [2, None, [1]],
         ]
 
-        return await self._rpc_call(
+        result = await self._rpc_call(
             RPCMethod.ACT_ON_SOURCES,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
+
+        if result and isinstance(result, list) and len(result) > 0:
+            # Result structure: [[mind_map_json, null, [note_id, ...]]]
+            inner = result[0]
+            if isinstance(inner, list) and len(inner) > 0:
+                mind_map_json = inner[0]
+                note_info = inner[2] if len(inner) > 2 else None
+                note_id = note_info[0] if note_info and isinstance(note_info, list) else None
+
+                # Parse the mind map JSON if it's a string
+                if isinstance(mind_map_json, str):
+                    import json
+                    try:
+                        mind_map_data = json.loads(mind_map_json)
+                    except json.JSONDecodeError:
+                        mind_map_data = mind_map_json
+                else:
+                    mind_map_data = mind_map_json
+
+                return {
+                    "mind_map": mind_map_data,
+                    "note_id": note_id,
+                }
+
+        return None
 
     async def save_mind_map(
         self,
@@ -1869,10 +1919,8 @@ class NotebookLMClient:
 
         # If no source_ids provided, get them from the notebook
         if source_ids is None:
-            # We'd need to fetch notebook data here, but for now assume all sources
-            # To fetch properly: notebook_data = await self.get_notebook(notebook_id)
-            # source_ids = self._extract_source_ids(notebook_data)
-            source_ids = []  # Empty means all sources usually
+            notebook_data = await self.get_notebook(notebook_id)
+            source_ids = self._extract_source_ids(notebook_data)
 
         # Determine if this is a new conversation or follow-up
         is_new_conversation = conversation_id is None

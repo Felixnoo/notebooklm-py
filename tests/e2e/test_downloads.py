@@ -65,7 +65,7 @@ class TestDownloadInfographic:
 
 @requires_auth
 @pytest.mark.e2e
-class TestDownloadSlides:
+class TestDownloadSlideDeck:
     @pytest.mark.asyncio
     @pytest.mark.slow
     async def test_download_slide_deck(self, client, test_notebook_id):

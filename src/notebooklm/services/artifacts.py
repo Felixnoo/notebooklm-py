@@ -48,10 +48,10 @@ class ArtifactService:
         status: str = result.get("status", "pending")
         return ArtifactStatus(task_id=artifact_id, status=status)
 
-    async def generate_slides(self, notebook_id: str) -> ArtifactStatus:
-        result = await self._client.generate_slides(notebook_id)
+    async def generate_slide_deck(self, notebook_id: str) -> ArtifactStatus:
+        result = await self._client.generate_slide_deck(notebook_id)
         if not result or "artifact_id" not in result:
-            raise ValueError("Slides generation failed - no artifact_id returned")
+            raise ValueError("Slide deck generation failed - no artifact_id returned")
 
         artifact_id: str = result["artifact_id"]
         status: str = result.get("status", "pending")

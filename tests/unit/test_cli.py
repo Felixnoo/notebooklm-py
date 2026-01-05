@@ -36,10 +36,24 @@ class TestCLIBasics:
         assert result.exit_code == 0
         assert "0.1.0" in result.output
 
+    def test_command_groups_shown(self, runner):
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "notebook" in result.output
+        assert "source" in result.output
+        assert "artifact" in result.output
+        assert "generate" in result.output
+        assert "download" in result.output
+        assert "note" in result.output
+
 
 class TestListNotebooks:
     def test_list_command_exists(self, runner):
         result = runner.invoke(cli, ["list", "--help"])
+        assert result.exit_code == 0
+
+    def test_notebook_list_command_exists(self, runner):
+        result = runner.invoke(cli, ["notebook", "list", "--help"])
         assert result.exit_code == 0
 
     def test_list_notebooks(self, runner, mock_auth):
@@ -69,6 +83,11 @@ class TestCreateNotebook:
         assert result.exit_code == 0
         assert "TITLE" in result.output
 
+    def test_notebook_create_command_exists(self, runner):
+        result = runner.invoke(cli, ["notebook", "create", "--help"])
+        assert result.exit_code == 0
+        assert "TITLE" in result.output
+
     def test_create_notebook(self, runner, mock_auth):
         with patch("notebooklm.notebooklm_cli.NotebookLMClient") as mock_client_cls:
             mock_client = MagicMock()
@@ -86,24 +105,137 @@ class TestCreateNotebook:
             assert result.exit_code == 0
 
 
-class TestAddSource:
-    def test_add_url_command_exists(self, runner):
-        result = runner.invoke(cli, ["add-url", "--help"])
+class TestSourceGroup:
+    def test_source_group_exists(self, runner):
+        result = runner.invoke(cli, ["source", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+        assert "add" in result.output
+        assert "delete" in result.output
+
+    def test_source_add_command_exists(self, runner):
+        result = runner.invoke(cli, ["source", "add", "--help"])
+        assert result.exit_code == 0
+        assert "CONTENT" in result.output
+        assert "--type" in result.output
+        assert "--notebook" in result.output or "-n" in result.output
+
+    def test_source_list_command_exists(self, runner):
+        result = runner.invoke(cli, ["source", "list", "--help"])
+        assert result.exit_code == 0
+        assert "--notebook" in result.output or "-n" in result.output
+
+
+class TestGenerateGroup:
+    def test_generate_group_exists(self, runner):
+        result = runner.invoke(cli, ["generate", "--help"])
+        assert result.exit_code == 0
+        assert "audio" in result.output
+        assert "video" in result.output
+        assert "quiz" in result.output
+
+    def test_generate_audio_command_exists(self, runner):
+        result = runner.invoke(cli, ["generate", "audio", "--help"])
+        assert result.exit_code == 0
+        # Description is now the primary positional argument (optional)
+        assert "DESCRIPTION" in result.output
+        assert "--notebook" in result.output or "-n" in result.output
+
+    def test_generate_audio_with_description_arg(self, runner):
+        # Instructions are now passed via the description positional argument
+        result = runner.invoke(cli, ["generate", "audio", "--help"])
+        assert "DESCRIPTION" in result.output
+
+    def test_generate_video_command_exists(self, runner):
+        result = runner.invoke(cli, ["generate", "video", "--help"])
+        assert result.exit_code == 0
+        assert "DESCRIPTION" in result.output
+
+    def test_generate_quiz_command_exists(self, runner):
+        result = runner.invoke(cli, ["generate", "quiz", "--help"])
+        assert result.exit_code == 0
+
+    def test_generate_slide_deck_command_exists(self, runner):
+        result = runner.invoke(cli, ["generate", "slide-deck", "--help"])
+        assert result.exit_code == 0
+
+
+class TestDownloadGroup:
+    def test_download_group_exists(self, runner):
+        result = runner.invoke(cli, ["download", "--help"])
+        assert result.exit_code == 0
+        assert "audio" in result.output
+        assert "video" in result.output
+
+    def test_download_audio_command_exists(self, runner):
+        result = runner.invoke(cli, ["download", "audio", "--help"])
+        assert result.exit_code == 0
+        assert "OUTPUT_PATH" in result.output
+        assert "--notebook" in result.output or "-n" in result.output
+
+
+class TestArtifactGroup:
+    def test_artifact_group_exists(self, runner):
+        result = runner.invoke(cli, ["artifact", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+        assert "get" in result.output
+        assert "delete" in result.output
+
+    def test_artifact_list_command_exists(self, runner):
+        result = runner.invoke(cli, ["artifact", "list", "--help"])
+        assert result.exit_code == 0
+        assert "--type" in result.output
+
+
+class TestNoteGroup:
+    def test_note_group_exists(self, runner):
+        result = runner.invoke(cli, ["note", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+        assert "create" in result.output
+        assert "delete" in result.output
+
+    def test_note_create_command_exists(self, runner):
+        result = runner.invoke(cli, ["note", "create", "--help"])
+        assert result.exit_code == 0
+        assert "--title" in result.output
+        assert "--content" in result.output
+
+
+class TestNotebookGroup:
+    def test_notebook_group_exists(self, runner):
+        result = runner.invoke(cli, ["notebook", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+        assert "create" in result.output
+        assert "delete" in result.output
+        assert "rename" in result.output
+
+    def test_notebook_query_command_exists(self, runner):
+        result = runner.invoke(cli, ["notebook", "query", "--help"])
+        assert result.exit_code == 0
+        assert "QUERY_TEXT" in result.output
+
+
+class TestQueryShortcut:
+    def test_query_command_exists(self, runner):
+        result = runner.invoke(cli, ["query", "--help"])
+        assert result.exit_code == 0
+        assert "QUERY_TEXT" in result.output
+        assert "--notebook" in result.output or "-n" in result.output
+
+
+class TestContextCommands:
+    def test_use_command_exists(self, runner):
+        result = runner.invoke(cli, ["use", "--help"])
         assert result.exit_code == 0
         assert "NOTEBOOK_ID" in result.output
-        assert "URL" in result.output
 
-    def test_add_text_command_exists(self, runner):
-        result = runner.invoke(cli, ["add-text", "--help"])
+    def test_status_command_exists(self, runner):
+        result = runner.invoke(cli, ["status", "--help"])
         assert result.exit_code == 0
 
-
-class TestGenerateAudio:
-    def test_audio_command_exists(self, runner):
-        result = runner.invoke(cli, ["audio", "--help"])
+    def test_clear_command_exists(self, runner):
+        result = runner.invoke(cli, ["clear", "--help"])
         assert result.exit_code == 0
-        assert "NOTEBOOK_ID" in result.output
-
-    def test_audio_with_instructions_option(self, runner):
-        result = runner.invoke(cli, ["audio", "--help"])
-        assert "--instructions" in result.output or "-i" in result.output

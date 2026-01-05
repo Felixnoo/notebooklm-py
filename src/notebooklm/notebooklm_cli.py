@@ -1,6 +1,30 @@
-"""CLI interface for NotebookLM automation."""
+"""CLI interface for NotebookLM automation.
+
+Command structure:
+  notebooklm login                    # Authenticate
+  notebooklm use <notebook_id>        # Set current notebook context
+  notebooklm status                   # Show current context
+  notebooklm list                     # List notebooks (shortcut)
+  notebooklm create <title>           # Create notebook (shortcut)
+  notebooklm query <text>             # Chat with current notebook
+
+  notebooklm notebook <command>       # Notebook operations
+  notebooklm source <command>         # Source operations
+  notebooklm artifact <command>       # Artifact management
+  notebooklm generate <type>          # Generate content
+  notebooklm download <type>          # Download content
+  notebooklm note <command>           # Note operations
+
+LLM-friendly design:
+  # Set context once, then use simple commands
+  notebooklm use nb123
+  notebooklm generate video "a funny explainer for kids"
+  notebooklm generate audio "deep dive focusing on chapter 3"
+  notebooklm query "what are the key themes?"
+"""
 
 import asyncio
+import json
 from pathlib import Path
 
 import click
@@ -25,19 +49,77 @@ from .rpc import (
     QuizDifficulty,
     InfographicOrientation,
     InfographicDetail,
-    SlidesFormat,
-    SlidesLength,
+    SlideDeckFormat,
+    SlideDeckLength,
 )
 
 console = Console()
 
 # Persistent browser profile directory
 BROWSER_PROFILE_DIR = Path.home() / ".notebooklm" / "browser_profile"
+# Context file for storing current notebook
+CONTEXT_FILE = Path.home() / ".notebooklm" / "context.json"
+
+
+def get_current_notebook() -> str | None:
+    """Get the current notebook ID from context."""
+    if not CONTEXT_FILE.exists():
+        return None
+    try:
+        data = json.loads(CONTEXT_FILE.read_text())
+        return data.get("notebook_id")
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def set_current_notebook(notebook_id: str, title: str | None = None):
+    """Set the current notebook context."""
+    CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {"notebook_id": notebook_id}
+    if title:
+        data["title"] = title
+    CONTEXT_FILE.write_text(json.dumps(data, indent=2))
+
+
+def clear_context():
+    """Clear the current context."""
+    if CONTEXT_FILE.exists():
+        CONTEXT_FILE.unlink()
+
+
+def require_notebook(notebook_id: str | None) -> str:
+    """Get notebook ID from argument or context, raise if neither."""
+    if notebook_id:
+        return notebook_id
+    current = get_current_notebook()
+    if current:
+        return current
+    console.print("[red]No notebook specified. Use 'notebooklm use <id>' to set context or provide notebook_id.[/red]")
+    raise SystemExit(1)
 
 
 def run_async(coro):
     """Run async coroutine in sync context."""
     return asyncio.run(coro)
+
+
+def get_client(ctx) -> tuple[dict, str, str]:
+    """Get auth components from context."""
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    cookies = load_auth_from_storage(storage_path)
+    csrf, session_id = run_async(fetch_tokens(cookies))
+    return cookies, csrf, session_id
+
+
+def handle_error(e: Exception):
+    """Handle and display errors consistently."""
+    console.print(f"[red]Error: {e}[/red]")
+    raise SystemExit(1)
+
+
+# =============================================================================
+# MAIN CLI GROUP
+# =============================================================================
 
 
 @click.group()
@@ -50,17 +132,31 @@ def run_async(coro):
 )
 @click.pass_context
 def cli(ctx, storage):
-    """NotebookLM automation CLI."""
+    """NotebookLM automation CLI.
+
+    \b
+    Quick start:
+      notebooklm login              # Authenticate first
+      notebooklm list               # List your notebooks
+      notebooklm create "My Notes"  # Create a notebook
+      notebooklm query <id> "Hi"    # Chat with a notebook
+
+    \b
+    Command groups:
+      notebook   Notebook management (list, create, delete, rename, share)
+      source     Source management (add, list, delete, refresh)
+      artifact   Artifact management (list, get, delete, export)
+      generate   Generate content (audio, video, quiz, slides, etc.)
+      download   Download generated content
+      note       Note management (create, list, edit, delete)
+    """
     ctx.ensure_object(dict)
     ctx.obj["storage_path"] = Path(storage) if storage else None
 
 
-def get_client(ctx) -> tuple[dict, str, str]:
-    """Get auth components from context."""
-    storage_path = ctx.obj.get("storage_path")
-    cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = run_async(fetch_tokens(cookies))
-    return cookies, csrf, session_id
+# =============================================================================
+# TOP-LEVEL CONVENIENCE COMMANDS
+# =============================================================================
 
 
 @cli.command("login")
@@ -71,14 +167,10 @@ def get_client(ctx) -> tuple[dict, str, str]:
     help=f"Where to save storage_state.json (default: {DEFAULT_STORAGE_PATH})",
 )
 def login(storage):
-    """Log in to NotebookLM via browser and save authentication.
+    """Log in to NotebookLM via browser.
 
-    Opens a browser window for you to log in to your Google account.
-    After successful login, press ENTER in the terminal to save and close.
-
-    Uses a persistent browser profile to avoid Google bot detection.
-
-    Requires: pip install notebooklm[browser]
+    Opens a browser window for Google login. After logging in,
+    press ENTER in the terminal to save authentication.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -92,66 +184,116 @@ def login(storage):
 
     storage_path = Path(storage) if storage else DEFAULT_STORAGE_PATH
     storage_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create persistent browser profile directory
     BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
     console.print("[yellow]Opening browser for Google login...[/yellow]")
     console.print(f"[dim]Using persistent profile: {BROWSER_PROFILE_DIR}[/dim]")
 
     with sync_playwright() as p:
-        # Use persistent context to avoid Google bot detection
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(BROWSER_PROFILE_DIR),
             headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-            ],
+            args=["--disable-blink-features=AutomationControlled"],
             ignore_default_args=["--enable-automation"],
         )
 
         page = context.pages[0] if context.pages else context.new_page()
-
-        # Navigate to NotebookLM
         page.goto("https://notebooklm.google.com/")
 
         console.print("\n[bold green]Instructions:[/bold green]")
         console.print("1. Complete the Google login in the browser window")
-        console.print(
-            "2. Wait until you see the NotebookLM homepage (list of notebooks)"
-        )
-        console.print(
-            "3. Press [bold]ENTER[/bold] here to save authentication and close browser\n"
-        )
+        console.print("2. Wait until you see the NotebookLM homepage")
+        console.print("3. Press [bold]ENTER[/bold] here to save and close\n")
 
-        # Wait for user to press Enter
-        input("[Press ENTER when logged in and on NotebookLM page] ")
+        input("[Press ENTER when logged in] ")
 
-        # Verify we're on NotebookLM
         current_url = page.url
         if "notebooklm.google.com" not in current_url:
             console.print(f"[yellow]Warning: Current URL is {current_url}[/yellow]")
-            console.print(
-                "[yellow]Make sure you're logged in to NotebookLM before continuing.[/yellow]"
-            )
             if not click.confirm("Save authentication anyway?"):
                 context.close()
                 raise SystemExit(1)
 
-        # Save storage state
         context.storage_state(path=str(storage_path))
         context.close()
 
     console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
-    console.print("\n[dim]You can now use other commands like:[/dim]")
-    console.print("  notebooklm list")
-    console.print('  notebooklm create "My Notebook"')
+
+
+@cli.command("use")
+@click.argument("notebook_id")
+@click.pass_context
+def use_notebook(ctx, notebook_id):
+    """Set the current notebook context.
+
+    Once set, all commands will use this notebook by default.
+    You can still override by passing --notebook explicitly.
+
+    \b
+    Example:
+      notebooklm use nb123
+      notebooklm query "what is this about?"   # Uses nb123
+      notebooklm generate video "a fun explainer"  # Uses nb123
+    """
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_notebook(notebook_id)
+
+        notebook = run_async(_get())
+        title = None
+        if notebook and isinstance(notebook, list) and len(notebook) > 0:
+            nb_info = notebook[0]
+            if isinstance(nb_info, list) and len(nb_info) > 1:
+                title = nb_info[1]
+
+        set_current_notebook(notebook_id, title)
+        console.print(f"[green]Now using notebook:[/green] {notebook_id}")
+        if title:
+            console.print(f"[dim]Title: {title}[/dim]")
+
+    except FileNotFoundError:
+        # Allow setting context even without auth (might be used later)
+        set_current_notebook(notebook_id)
+        console.print(f"[green]Now using notebook:[/green] {notebook_id}")
+    except Exception as e:
+        # Still set context even if we can't verify the notebook
+        set_current_notebook(notebook_id)
+        console.print(f"[green]Now using notebook:[/green] {notebook_id}")
+        console.print(f"[dim]Warning: {e}[/dim]")
+
+
+@cli.command("status")
+def status():
+    """Show current context (active notebook)."""
+    notebook_id = get_current_notebook()
+    if notebook_id:
+        try:
+            data = json.loads(CONTEXT_FILE.read_text())
+            title = data.get("title", "")
+            console.print(f"[bold cyan]Current notebook:[/bold cyan] {notebook_id}")
+            if title:
+                console.print(f"[dim]Title: {title}[/dim]")
+        except (json.JSONDecodeError, IOError):
+            console.print(f"[bold cyan]Current notebook:[/bold cyan] {notebook_id}")
+    else:
+        console.print("[yellow]No notebook selected. Use 'notebooklm use <id>' to set one.[/yellow]")
+
+
+@cli.command("clear")
+def clear_cmd():
+    """Clear current notebook context."""
+    clear_context()
+    console.print("[green]Context cleared[/green]")
 
 
 @cli.command("list")
 @click.pass_context
-def list_notebooks(ctx):
-    """List all notebooks."""
+def list_notebooks_shortcut(ctx):
+    """List all notebooks (shortcut for 'notebook list')."""
     try:
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
@@ -175,18 +317,17 @@ def list_notebooks(ctx):
         console.print(table)
 
     except FileNotFoundError:
-        console.print(f"[red]Auth not found. Run 'notebooklm login' first.[/red]")
+        console.print("[red]Auth not found. Run 'notebooklm login' first.[/red]")
         raise SystemExit(1)
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
 @cli.command("create")
 @click.argument("title")
 @click.pass_context
-def create_notebook(ctx, title):
-    """Create a new notebook."""
+def create_notebook_shortcut(ctx, title):
+    """Create a new notebook (shortcut for 'notebook create')."""
     try:
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
@@ -197,180 +338,93 @@ def create_notebook(ctx, title):
                 return await service.create(title)
 
         notebook = run_async(_create())
-        console.print(
-            f"[green]Created notebook:[/green] {notebook.id} - {notebook.title}"
-        )
+        console.print(f"[green]Created notebook:[/green] {notebook.id} - {notebook.title}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("add-url")
-@click.argument("notebook_id")
-@click.argument("url")
+@cli.command("query")
+@click.argument("query_text")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--conversation-id", "-c", default=None, help="Continue a conversation")
 @click.pass_context
-def add_url(ctx, notebook_id, url):
-    """Add a URL source to a notebook."""
+def query_shortcut(ctx, query_text, notebook_id, conversation_id):
+    """Chat with a notebook (shortcut for 'notebook query').
+
+    \b
+    Example:
+      notebooklm use nb123
+      notebooklm query "what are the main themes?"
+      notebooklm query "tell me more" -c <conversation_id>
+    """
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        async def _add():
+        async def _query():
             async with NotebookLMClient(auth) as client:
-                service = SourceService(client)
-                return await service.add_url(notebook_id, url)
-
-        source = run_async(_add())
-        console.print(f"[green]Added source:[/green] {source.id}")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("add-text")
-@click.argument("notebook_id")
-@click.argument("title")
-@click.argument("content")
-@click.pass_context
-def add_text(ctx, notebook_id, title, content):
-    """Add text content as a source."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _add():
-            async with NotebookLMClient(auth) as client:
-                service = SourceService(client)
-                return await service.add_text(notebook_id, title, content)
-
-        source = run_async(_add())
-        console.print(f"[green]Added source:[/green] {source.id}")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("add-file")
-@click.argument("notebook_id")
-@click.argument("file_path", type=click.Path(exists=True))
-@click.option("--mime-type", help="MIME type (auto-detected if not specified)")
-@click.pass_context
-def add_file(ctx, notebook_id, file_path, mime_type):
-    """Add a file source to a notebook (PDF, TXT, MD, DOCX, etc.)."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _add():
-            async with NotebookLMClient(auth) as client:
-                service = SourceService(client)
-                return await service.add_file(notebook_id, file_path, mime_type)
-
-        with console.status(f"Uploading {file_path}..."):
-            source = run_async(_add())
-        console.print(f"[green]Added file as source:[/green] {source.id}")
-        console.print(f"[dim]Title: {source.title}[/dim]")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("audio")
-@click.argument("notebook_id")
-@click.option("-i", "--instructions", help="Instructions for AI hosts")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
-@click.pass_context
-def generate_audio(ctx, notebook_id, instructions, wait):
-    """Generate audio overview (podcast)."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _generate():
-            async with NotebookLMClient(auth) as client:
-                service = ArtifactService(client)
-                status = await service.generate_audio(
-                    notebook_id, host_instructions=instructions
+                return await client.query(
+                    nb_id, query_text, conversation_id=conversation_id
                 )
 
-                if wait:
-                    console.print(
-                        f"[yellow]Generating audio...[/yellow] Task: {status.task_id}"
-                    )
-                    status = await service.wait_for_completion(
-                        notebook_id, status.task_id, poll_interval=10.0
-                    )
+        result = run_async(_query())
 
-                return status
-
-        status = run_async(_generate())
-
-        if status.is_complete:
-            console.print(f"[green]Audio ready:[/green] {status.url}")
-        elif status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
-        else:
-            console.print(
-                f"[yellow]Status:[/yellow] {status.status} (task: {status.task_id})"
-            )
+        console.print(f"[bold cyan]Answer:[/bold cyan]")
+        console.print(result["answer"])
+        console.print(f"\n[dim]Conversation ID: {result['conversation_id']}[/dim]")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("slides")
-@click.argument("notebook_id")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+# =============================================================================
+# NOTEBOOK GROUP
+# =============================================================================
+
+
+@cli.group()
+def notebook():
+    """Notebook management commands.
+
+    \b
+    Commands:
+      list       List all notebooks
+      create     Create a new notebook
+      delete     Delete a notebook
+      rename     Rename a notebook
+      share      Share a notebook
+      summary    Get notebook summary
+      analytics  Get notebook analytics
+      history    Get conversation history
+    """
+    pass
+
+
+@notebook.command("list")
 @click.pass_context
-def generate_slides(ctx, notebook_id, wait):
-    """Generate slide deck."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _generate():
-            async with NotebookLMClient(auth) as client:
-                service = ArtifactService(client)
-                status = await service.generate_slides(notebook_id)
-
-                if wait:
-                    console.print(
-                        f"[yellow]Generating slides...[/yellow] Task: {status.task_id}"
-                    )
-                    status = await service.wait_for_completion(
-                        notebook_id, status.task_id, poll_interval=10.0
-                    )
-
-                return status
-
-        status = run_async(_generate())
-
-        if status.is_complete:
-            console.print(f"[green]Slides ready:[/green] {status.url}")
-        elif status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
-        else:
-            console.print(f"[yellow]Status:[/yellow] {status.status}")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+def notebook_list(ctx):
+    """List all notebooks."""
+    ctx.invoke(list_notebooks_shortcut)
 
 
-@cli.command("delete")
+@notebook.command("create")
+@click.argument("title")
+@click.pass_context
+def notebook_create(ctx, title):
+    """Create a new notebook."""
+    ctx.invoke(create_notebook_shortcut, title=title)
+
+
+@notebook.command("delete")
 @click.argument("notebook_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @click.pass_context
-def delete_notebook(ctx, notebook_id, yes):
+def notebook_delete(ctx, notebook_id, yes):
     """Delete a notebook."""
-    if not yes:
-        if not click.confirm(f"Delete notebook {notebook_id}?"):
-            return
+    if not yes and not click.confirm(f"Delete notebook {notebook_id}?"):
+        return
 
     try:
         cookies, csrf, session_id = get_client(ctx)
@@ -382,22 +436,20 @@ def delete_notebook(ctx, notebook_id, yes):
                 return await service.delete(notebook_id)
 
         success = run_async(_delete())
-
         if success:
             console.print(f"[green]Deleted notebook:[/green] {notebook_id}")
         else:
-            console.print(f"[yellow]Delete may have failed[/yellow]")
+            console.print("[yellow]Delete may have failed[/yellow]")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("rename")
+@notebook.command("rename")
 @click.argument("notebook_id")
 @click.argument("new_title")
 @click.pass_context
-def rename_notebook(ctx, notebook_id, new_title):
+def notebook_rename(ctx, notebook_id, new_title):
     """Rename a notebook."""
     try:
         cookies, csrf, session_id = get_client(ctx)
@@ -408,54 +460,127 @@ def rename_notebook(ctx, notebook_id, new_title):
                 return await client.rename_notebook(notebook_id, new_title)
 
         run_async(_rename())
-        console.print(f"[green]Renamed notebook:[/green] {notebook_id} -> {new_title}")
+        console.print(f"[green]Renamed:[/green] {notebook_id} -> {new_title}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("query")
+@notebook.command("share")
 @click.argument("notebook_id")
-@click.argument("query_text")
-@click.option("--conversation-id", default=None, help="Continue a conversation")
 @click.pass_context
-def query_notebook(ctx, notebook_id, query_text, conversation_id):
-    """Query a notebook (chat)."""
+def notebook_share(ctx, notebook_id):
+    """Configure notebook sharing."""
     try:
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        async def _query():
+        async def _share():
             async with NotebookLMClient(auth) as client:
-                return await client.query(
-                    notebook_id, query_text, conversation_id=conversation_id
-                )
+                return await client.share_project(notebook_id)
 
-        result = run_async(_query())
-
-        console.print(f"[bold cyan]Answer:[/bold cyan]")
-        console.print(result["answer"])
-        console.print(f"\n[dim]Conversation ID: {result['conversation_id']}[/dim]")
-        console.print(f"[dim]Turn: {result['turn_number']}[/dim]")
+        result = run_async(_share())
+        if result:
+            console.print(f"[green]Sharing configured[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]No sharing info returned[/yellow]")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("research")
+@notebook.command("summary")
+@click.argument("notebook_id")
+@click.pass_context
+def notebook_summary(ctx, notebook_id):
+    """Get notebook summary."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_summary(notebook_id)
+
+        summary = run_async(_get())
+        if summary:
+            console.print("[bold cyan]Summary:[/bold cyan]")
+            console.print(summary)
+        else:
+            console.print("[yellow]No summary available[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@notebook.command("analytics")
+@click.argument("notebook_id")
+@click.pass_context
+def notebook_analytics(ctx, notebook_id):
+    """Get notebook analytics."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_project_analytics(notebook_id)
+
+        analytics = run_async(_get())
+        if analytics:
+            console.print("[bold cyan]Analytics:[/bold cyan]")
+            console.print(analytics)
+        else:
+            console.print("[yellow]No analytics available[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@notebook.command("history")
+@click.argument("notebook_id")
+@click.option("--limit", "-n", default=20, help="Number of messages")
+@click.pass_context
+def notebook_history(ctx, notebook_id, limit):
+    """Get conversation history."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_conversation_history(notebook_id, limit=limit)
+
+        history = run_async(_get())
+        if history:
+            console.print(f"[bold cyan]Conversation History (last {limit}):[/bold cyan]")
+            console.print(history)
+        else:
+            console.print("[yellow]No conversation history[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@notebook.command("query")
+@click.argument("notebook_id")
+@click.argument("query_text")
+@click.option("--conversation-id", "-c", default=None, help="Continue a conversation")
+@click.pass_context
+def notebook_query(ctx, notebook_id, query_text, conversation_id):
+    """Chat with a notebook."""
+    ctx.invoke(query_shortcut, notebook_id=notebook_id, query_text=query_text, conversation_id=conversation_id)
+
+
+@notebook.command("research")
 @click.argument("notebook_id")
 @click.argument("query")
-@click.option(
-    "--source", type=click.Choice(["web", "drive"]), default="web", help="Source type"
-)
-@click.option(
-    "--mode", type=click.Choice(["fast", "deep"]), default="fast", help="Research mode"
-)
+@click.option("--source", type=click.Choice(["web", "drive"]), default="web")
+@click.option("--mode", type=click.Choice(["fast", "deep"]), default="fast")
 @click.option("--import-all", is_flag=True, help="Import all found sources")
 @click.pass_context
-def research(ctx, notebook_id, query, source, mode, import_all):
+def notebook_research(ctx, notebook_id, query, source, mode, import_all):
     """Start a research session."""
     try:
         cookies, csrf, session_id = get_client(ctx)
@@ -463,10 +588,7 @@ def research(ctx, notebook_id, query, source, mode, import_all):
 
         async def _research():
             async with NotebookLMClient(auth) as client:
-                # Start research
-                console.print(
-                    f"[yellow]Starting {mode} research on {source}...[/yellow]"
-                )
+                console.print(f"[yellow]Starting {mode} research on {source}...[/yellow]")
                 result = await client.start_research(notebook_id, query, source, mode)
                 if not result:
                     return None, None
@@ -474,10 +596,8 @@ def research(ctx, notebook_id, query, source, mode, import_all):
                 task_id = result["task_id"]
                 console.print(f"[dim]Task ID: {task_id}[/dim]")
 
-                # Poll for completion
                 import time
-
-                for _ in range(60):  # Max 5 minutes
+                for _ in range(60):
                     status = await client.poll_research(notebook_id)
                     if status.get("status") == "completed":
                         return task_id, status
@@ -489,133 +609,95 @@ def research(ctx, notebook_id, query, source, mode, import_all):
 
         task_id, status = run_async(_research())
 
-        if not status or not isinstance(status, dict):
+        if not status:
             console.print("[red]Research failed to start[/red]")
             raise SystemExit(1)
 
         if status.get("status") == "completed":
             sources = status.get("sources", [])
-            console.print(f"\n[green]Found {len(sources)} sources:[/green]")
-            if isinstance(sources, list):
-                for i, src in enumerate(sources, 1):
-                    if isinstance(src, dict):
-                        console.print(f"  {i}. {src.get('title', 'Untitled')}")
-                        if src.get("url"):
-                            console.print(f"     [dim]{src['url']}[/dim]")
+            console.print(f"\n[green]Found {len(sources)} sources[/green]")
 
-            if import_all and sources and task_id and isinstance(sources, list):
-
+            if import_all and sources and task_id:
                 async def _import():
                     async with NotebookLMClient(auth) as client:
-                        return await client.import_research_sources(
-                            notebook_id, task_id, sources
-                        )
+                        return await client.import_research_sources(notebook_id, task_id, sources)
 
                 imported = run_async(_import())
-                console.print(f"\n[green]Imported {len(imported)} sources[/green]")
+                console.print(f"[green]Imported {len(imported)} sources[/green]")
         else:
             console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-# ==================== SOURCE OPERATIONS ====================
-
-
-@cli.command("add-youtube")
-@click.argument("notebook_id")
-@click.argument("youtube_url")
+@notebook.command("featured")
+@click.option("--limit", "-n", default=20, help="Number of notebooks")
 @click.pass_context
-def add_youtube(ctx, notebook_id, youtube_url):
-    """Add a YouTube video source (with transcript extraction)."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _add():
-            async with NotebookLMClient(auth) as client:
-                service = SourceService(client)
-                # add_url automatically detects YouTube and uses the right API
-                return await service.add_url(notebook_id, youtube_url)
-
-        source = run_async(_add())
-        console.print(f"[green]Added YouTube source:[/green] {source.id}")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("delete-source")
-@click.argument("notebook_id")
-@click.argument("source_id")
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-@click.pass_context
-def delete_source(ctx, notebook_id, source_id, yes):
-    """Delete a source from a notebook."""
-    if not yes:
-        if not click.confirm(f"Delete source {source_id}?"):
-            return
-
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _delete():
-            async with NotebookLMClient(auth) as client:
-                service = SourceService(client)
-                return await service.delete(notebook_id, source_id)
-
-        success = run_async(_delete())
-
-        if success:
-            console.print(f"[green]Deleted source:[/green] {source_id}")
-        else:
-            console.print(f"[yellow]Delete may have failed[/yellow]")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("rename-source")
-@click.argument("notebook_id")
-@click.argument("source_id")
-@click.argument("new_title")
-@click.pass_context
-def rename_source(ctx, notebook_id, source_id, new_title):
-    """Rename a source."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _rename():
-            async with NotebookLMClient(auth) as client:
-                return await client.rename_source(notebook_id, source_id, new_title)
-
-        run_async(_rename())
-        console.print(f"[green]Renamed source:[/green] {source_id} -> {new_title}")
-
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
-
-
-@cli.command("list-sources")
-@click.argument("notebook_id")
-@click.pass_context
-def list_sources(ctx, notebook_id):
-    """List all sources in a notebook."""
+def notebook_featured(ctx, limit):
+    """List featured/public notebooks."""
     try:
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _list():
             async with NotebookLMClient(auth) as client:
-                notebook = await client.get_notebook(notebook_id)
-                # Extract sources from notebook data
+                return await client.list_featured_projects(page_size=limit)
+
+        projects = run_async(_list())
+
+        if not projects:
+            console.print("[yellow]No featured notebooks found[/yellow]")
+            return
+
+        table = Table(title="Featured Notebooks")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="green")
+
+        for proj in projects:
+            if isinstance(proj, list) and len(proj) > 0:
+                table.add_row(str(proj[0] or "-"), str(proj[1] if len(proj) > 1 else "-"))
+
+        console.print(table)
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# SOURCE GROUP
+# =============================================================================
+
+
+@cli.group()
+def source():
+    """Source management commands.
+
+    \b
+    Commands:
+      list      List sources in a notebook
+      add       Add a source (url, text, file, youtube)
+      get       Get source details
+      delete    Delete a source
+      rename    Rename a source
+      refresh   Refresh a URL/Drive source
+    """
+    pass
+
+
+@source.command("list")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def source_list(ctx, notebook_id):
+    """List all sources in a notebook."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _list():
+            async with NotebookLMClient(auth) as client:
+                notebook = await client.get_notebook(nb_id)
                 sources = []
                 if notebook and isinstance(notebook, list) and len(notebook) > 0:
                     nb_info = notebook[0]
@@ -624,18 +706,14 @@ def list_sources(ctx, notebook_id):
                         if isinstance(sources_list, list):
                             for src in sources_list:
                                 if isinstance(src, list) and len(src) > 0:
-                                    src_id = (
-                                        src[0][0]
-                                        if isinstance(src[0], list)
-                                        else src[0]
-                                    )
+                                    src_id = src[0][0] if isinstance(src[0], list) else src[0]
                                     src_title = src[1] if len(src) > 1 else "Untitled"
                                     sources.append({"id": src_id, "title": src_title})
                 return sources
 
         sources = run_async(_list())
 
-        table = Table(title=f"Sources in Notebook {notebook_id}")
+        table = Table(title=f"Sources in {nb_id}")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="green")
 
@@ -645,564 +723,1240 @@ def list_sources(ctx, notebook_id):
         console.print(table)
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-# ==================== ARTIFACT GENERATION ====================
-
-
-@cli.command("generate-video")
-@click.argument("notebook_id")
-@click.option(
-    "--format",
-    type=click.Choice(["explainer", "brief"]),
-    default="explainer",
-    help="Video format",
-)
-@click.option(
-    "--style",
-    type=click.Choice(
-        [
-            "auto",
-            "classic",
-            "whiteboard",
-            "kawaii",
-            "anime",
-            "watercolor",
-            "retro-print",
-            "heritage",
-            "paper-craft",
-        ]
-    ),
-    default="auto",
-    help="Visual style",
-)
-@click.option("-i", "--instructions", help="Custom instructions")
-@click.option("--language", default="en", help="Language code")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+@source.command("add")
+@click.argument("content")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--type", "source_type", type=click.Choice(["url", "text", "file", "youtube"]), default="url")
+@click.option("--title", help="Title for text sources")
+@click.option("--mime-type", help="MIME type for file sources")
 @click.pass_context
-def generate_video(ctx, notebook_id, format, style, instructions, language, wait):
-    """Generate video overview."""
+def source_add(ctx, content, notebook_id, source_type, title, mime_type):
+    """Add a source to a notebook.
+
+    \b
+    Examples:
+      source add https://example.com              # URL
+      source add "My content" --type text --title "My Doc"
+      source add ./doc.pdf --type file
+      source add https://youtube.com/... --type youtube
+    """
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _add():
+            async with NotebookLMClient(auth) as client:
+                service = SourceService(client)
+                if source_type == "url":
+                    return await service.add_url(nb_id, content)
+                elif source_type == "youtube":
+                    return await service.add_url(nb_id, content)
+                elif source_type == "text":
+                    return await service.add_text(nb_id, title or "Untitled", content)
+                elif source_type == "file":
+                    return await service.add_file(nb_id, content, mime_type)
+
+        with console.status(f"Adding {source_type} source..."):
+            source = run_async(_add())
+
+        console.print(f"[green]Added source:[/green] {source.id}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@source.command("get")
+@click.argument("source_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def source_get(ctx, source_id, notebook_id):
+    """Get source details."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_source(nb_id, source_id)
+
+        source = run_async(_get())
+        if source:
+            console.print("[bold cyan]Source Details:[/bold cyan]")
+            console.print(source)
+        else:
+            console.print("[yellow]Source not found[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@source.command("delete")
+@click.argument("source_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def source_delete(ctx, source_id, notebook_id, yes):
+    """Delete a source."""
+    if not yes and not click.confirm(f"Delete source {source_id}?"):
+        return
+
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _delete():
+            async with NotebookLMClient(auth) as client:
+                service = SourceService(client)
+                return await service.delete(nb_id, source_id)
+
+        success = run_async(_delete())
+        if success:
+            console.print(f"[green]Deleted source:[/green] {source_id}")
+        else:
+            console.print("[yellow]Delete may have failed[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@source.command("rename")
+@click.argument("source_id")
+@click.argument("new_title")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def source_rename(ctx, source_id, new_title, notebook_id):
+    """Rename a source."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _rename():
+            async with NotebookLMClient(auth) as client:
+                return await client.rename_source(nb_id, source_id, new_title)
+
+        run_async(_rename())
+        console.print(f"[green]Renamed:[/green] {source_id} -> {new_title}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@source.command("refresh")
+@click.argument("source_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def source_refresh(ctx, source_id, notebook_id):
+    """Refresh a URL/Drive source."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _refresh():
+            async with NotebookLMClient(auth) as client:
+                return await client.refresh_source(nb_id, source_id)
+
+        with console.status(f"Refreshing source..."):
+            result = run_async(_refresh())
+
+        if result:
+            console.print(f"[green]Source refreshed:[/green] {source_id}")
+        else:
+            console.print("[yellow]Refresh returned no result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# ARTIFACT GROUP
+# =============================================================================
+
+
+@cli.group()
+def artifact():
+    """Artifact management commands.
+
+    \b
+    Commands:
+      list      List all artifacts (or by type)
+      get       Get artifact details
+      rename    Rename an artifact
+      delete    Delete an artifact
+      export    Export to Google Docs/Sheets
+      poll      Poll generation status
+    """
+    pass
+
+
+@artifact.command("list")
+@click.argument("notebook_id")
+@click.option("--type", "artifact_type",
+              type=click.Choice(["all", "video", "slide-deck", "quiz", "flashcard",
+                                "infographic", "data-table", "mind-map", "briefing-doc"]),
+              default="all", help="Filter by type")
+@click.pass_context
+def artifact_list(ctx, notebook_id, artifact_type):
+    """List artifacts in a notebook."""
     try:
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        # Map CLI strings to enums
-        format_map = {"explainer": VideoFormat.EXPLAINER, "brief": VideoFormat.BRIEF}
-        style_map = {
-            "auto": VideoStyle.AUTO_SELECT,
-            "classic": VideoStyle.CLASSIC,
-            "whiteboard": VideoStyle.WHITEBOARD,
-            "kawaii": VideoStyle.KAWAII,
-            "anime": VideoStyle.ANIME,
-            "watercolor": VideoStyle.WATERCOLOR,
-            "retro-print": VideoStyle.RETRO_PRINT,
-            "heritage": VideoStyle.HERITAGE,
-            "paper-craft": VideoStyle.PAPER_CRAFT,
-        }
+        async def _list():
+            async with NotebookLMClient(auth) as client:
+                if artifact_type == "all":
+                    return await client.list_artifacts(notebook_id), "all"
+                elif artifact_type == "video":
+                    return await client.list_video_overviews(notebook_id), "video"
+                elif artifact_type == "slide-deck":
+                    return await client.list_slide_decks(notebook_id), "slide-deck"
+                elif artifact_type == "quiz":
+                    return await client.list_quizzes(notebook_id), "quiz"
+                elif artifact_type == "flashcard":
+                    return await client.list_flashcards(notebook_id), "flashcard"
+                elif artifact_type == "infographic":
+                    return await client.list_infographics(notebook_id), "infographic"
+                elif artifact_type == "data-table":
+                    return await client.list_data_tables(notebook_id), "data-table"
+                elif artifact_type == "mind-map":
+                    return await client.list_mind_maps(notebook_id), "mind-map"
+                elif artifact_type == "briefing-doc":
+                    return await client.list_briefing_docs(notebook_id), "briefing-doc"
+                return [], artifact_type
+
+        artifacts, atype = run_async(_list())
+
+        if not artifacts:
+            console.print(f"[yellow]No {atype} artifacts found[/yellow]")
+            return
+
+        table = Table(title=f"{atype.title()} Artifacts in {notebook_id}")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="green")
+        table.add_column("Status", style="yellow")
+
+        for art in artifacts:
+            if isinstance(art, list) and len(art) > 0:
+                art_id = str(art[0] or "-")
+                title = str(art[1] if len(art) > 1 else "-")
+                status_code = art[4] if len(art) > 4 else None
+                status = "completed" if status_code == 3 else "processing" if status_code == 1 else str(status_code)
+                table.add_row(art_id, title, status)
+            elif isinstance(art, dict):
+                table.add_row(art.get("id", "-"), art.get("title", "-"), "-")
+
+        console.print(table)
+
+    except Exception as e:
+        handle_error(e)
+
+
+@artifact.command("get")
+@click.argument("notebook_id")
+@click.argument("artifact_id")
+@click.pass_context
+def artifact_get(ctx, notebook_id, artifact_id):
+    """Get artifact details."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _get():
+            async with NotebookLMClient(auth) as client:
+                return await client.get_artifact(notebook_id, artifact_id)
+
+        artifact = run_async(_get())
+        if artifact:
+            console.print("[bold cyan]Artifact Details:[/bold cyan]")
+            console.print(artifact)
+        else:
+            console.print("[yellow]Artifact not found[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@artifact.command("rename")
+@click.argument("notebook_id")
+@click.argument("artifact_id")
+@click.argument("new_title")
+@click.pass_context
+def artifact_rename(ctx, notebook_id, artifact_id, new_title):
+    """Rename an artifact."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _rename():
+            async with NotebookLMClient(auth) as client:
+                return await client.rename_artifact(notebook_id, artifact_id, new_title)
+
+        run_async(_rename())
+        console.print(f"[green]Renamed:[/green] {artifact_id} -> {new_title}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@artifact.command("delete")
+@click.argument("notebook_id")
+@click.argument("artifact_id")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def artifact_delete(ctx, notebook_id, artifact_id, yes):
+    """Delete an artifact."""
+    if not yes and not click.confirm(f"Delete artifact {artifact_id}?"):
+        return
+
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _delete():
+            async with NotebookLMClient(auth) as client:
+                return await client.delete_studio_content(notebook_id, artifact_id)
+
+        run_async(_delete())
+        console.print(f"[green]Deleted artifact:[/green] {artifact_id}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@artifact.command("export")
+@click.argument("notebook_id")
+@click.argument("artifact_id")
+@click.option("--title", required=True, help="Title for exported document")
+@click.option("--type", "export_type", type=click.Choice(["docs", "sheets"]), default="docs")
+@click.pass_context
+def artifact_export(ctx, notebook_id, artifact_id, title, export_type):
+    """Export artifact to Google Docs/Sheets."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _export():
+            async with NotebookLMClient(auth) as client:
+                artifact = await client.get_artifact(notebook_id, artifact_id)
+                content = str(artifact) if artifact else ""
+                return await client.export_artifact(notebook_id, artifact_id, content, title, export_type)
+
+        result = run_async(_export())
+        if result:
+            console.print(f"[green]Exported to Google {export_type.title()}[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]Export may have failed[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@artifact.command("poll")
+@click.argument("notebook_id")
+@click.argument("task_id")
+@click.pass_context
+def artifact_poll(ctx, notebook_id, task_id):
+    """Poll generation status."""
+    try:
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _poll():
+            async with NotebookLMClient(auth) as client:
+                return await client.poll_studio_status(notebook_id, task_id)
+
+        status = run_async(_poll())
+        console.print("[bold cyan]Task Status:[/bold cyan]")
+        console.print(status)
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# GENERATE GROUP
+# =============================================================================
+
+
+@cli.group()
+def generate():
+    """Generate content from notebook.
+
+    \b
+    LLM-friendly design: Describe what you want in natural language.
+
+    \b
+    Examples:
+      notebooklm use nb123
+      notebooklm generate video "a funny explainer for kids age 5"
+      notebooklm generate audio "deep dive focusing on chapter 3"
+      notebooklm generate quiz "focus on vocabulary terms"
+
+    \b
+    Types:
+      audio        Audio overview (podcast)
+      video        Video overview
+      slide-deck   Slide deck
+      quiz         Quiz
+      flashcards   Flashcards
+      infographic  Infographic
+      data-table   Data table
+      mind-map     Mind map
+      timeline     Timeline
+      study-guide  Study guide
+      faq          FAQ
+      briefing-doc Briefing document
+    """
+    pass
+
+
+@generate.command("audio")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--format", "audio_format", type=click.Choice(["deep-dive", "brief", "critique", "debate"]), default="deep-dive")
+@click.option("--length", "audio_length", type=click.Choice(["short", "default", "long"]), default="default")
+@click.option("--language", default="en")
+@click.option("--wait/--no-wait", default=True)
+@click.pass_context
+def generate_audio(ctx, description, notebook_id, audio_format, audio_length, language, wait):
+    """Generate audio overview (podcast).
+
+    \b
+    Example:
+      notebooklm generate audio "deep dive focusing on key themes"
+      notebooklm generate audio "make it funny and casual" --format debate
+    """
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        format_map = {"deep-dive": AudioFormat.DEEP_DIVE, "brief": AudioFormat.BRIEF,
+                      "critique": AudioFormat.CRITIQUE, "debate": AudioFormat.DEBATE}
+        length_map = {"short": AudioLength.SHORT, "default": AudioLength.DEFAULT, "long": AudioLength.LONG}
 
         async def _generate():
             async with NotebookLMClient(auth) as client:
-                result = await client.generate_video(
-                    notebook_id,
+                result = await client.generate_audio(
+                    nb_id,
                     language=language,
-                    instructions=instructions,
-                    video_format=format_map[format],
-                    video_style=style_map[style],
+                    instructions=description or None,
+                    audio_format=format_map[audio_format],
+                    audio_length=length_map[audio_length],
                 )
 
                 if not result:
                     return None
 
-                task_id = result[0] if isinstance(result, list) else None
-
-                if wait and task_id:
-                    console.print(
-                        f"[yellow]Generating video...[/yellow] Task: {task_id}"
-                    )
+                if wait:
+                    console.print(f"[yellow]Generating audio...[/yellow] Task: {result.get('artifact_id')}")
                     service = ArtifactService(client)
-                    status = await service.wait_for_completion(
-                        notebook_id, task_id, poll_interval=10.0, timeout=600.0
+                    return await service.wait_for_completion(
+                        nb_id, result["artifact_id"], poll_interval=10.0
                     )
-                    return status
-                return {"task_id": task_id, "status": "pending"}
+                return result
 
         status = run_async(_generate())
 
         if not status:
-            console.print("[red]Video generation failed to start[/red]")
-            raise SystemExit(1)
-
-        if isinstance(status, dict):
-            task_id = status.get("task_id")
-            console.print(f"[yellow]Video generation started:[/yellow] Task {task_id}")
+            console.print("[red]Audio generation failed[/red]")
         elif hasattr(status, "is_complete") and status.is_complete:
-            console.print(f"[green]Video ready:[/green] {status.url}")
+            console.print(f"[green]Audio ready:[/green] {status.url}")
         elif hasattr(status, "is_failed") and status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
+            console.print(f"[red]Failed:[/red] {status.error}")
         else:
-            console.print(f"[yellow]Video generation started[/yellow]")
+            console.print(f"[yellow]Started:[/yellow] {status}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("generate-quiz")
-@click.argument("notebook_id")
-@click.option(
-    "--quantity",
-    type=click.Choice(["fewer", "standard", "more"]),
-    default="standard",
-    help="Number of questions",
-)
-@click.option(
-    "--difficulty",
-    type=click.Choice(["easy", "medium", "hard"]),
-    default="medium",
-    help="Difficulty level",
-)
-@click.option("-i", "--instructions", help="Custom instructions")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+@generate.command("video")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--format", "video_format", type=click.Choice(["explainer", "brief"]), default="explainer")
+@click.option("--style", type=click.Choice(["auto", "classic", "whiteboard", "kawaii", "anime", "watercolor", "retro-print", "heritage", "paper-craft"]), default="auto")
+@click.option("--language", default="en")
+@click.option("--wait/--no-wait", default=True)
 @click.pass_context
-def generate_quiz(ctx, notebook_id, quantity, difficulty, instructions, wait):
-    """Generate quiz from notebook content."""
+def generate_video(ctx, description, notebook_id, video_format, style, language, wait):
+    """Generate video overview.
+
+    \b
+    Example:
+      notebooklm generate video "a funny explainer for kids age 5"
+      notebooklm generate video "professional presentation" --style classic
+      notebooklm generate video --style kawaii
+    """
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        # Map CLI strings to enums
-        quantity_map = {
-            "fewer": QuizQuantity.FEWER,
-            "standard": QuizQuantity.STANDARD,
-            "more": QuizQuantity.MORE,
-        }
-        difficulty_map = {
-            "easy": QuizDifficulty.EASY,
-            "medium": QuizDifficulty.MEDIUM,
-            "hard": QuizDifficulty.HARD,
-        }
+        format_map = {"explainer": VideoFormat.EXPLAINER, "brief": VideoFormat.BRIEF}
+        style_map = {"auto": VideoStyle.AUTO_SELECT, "classic": VideoStyle.CLASSIC, "whiteboard": VideoStyle.WHITEBOARD,
+                     "kawaii": VideoStyle.KAWAII, "anime": VideoStyle.ANIME, "watercolor": VideoStyle.WATERCOLOR,
+                     "retro-print": VideoStyle.RETRO_PRINT, "heritage": VideoStyle.HERITAGE, "paper-craft": VideoStyle.PAPER_CRAFT}
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                result = await client.generate_video(
+                    nb_id, language=language, instructions=description or None,
+                    video_format=format_map[video_format], video_style=style_map[style],
+                )
+
+                if not result:
+                    return None
+
+                if wait and result.get("artifact_id"):
+                    console.print(f"[yellow]Generating video...[/yellow] Task: {result.get('artifact_id')}")
+                    service = ArtifactService(client)
+                    return await service.wait_for_completion(
+                        nb_id, result["artifact_id"], poll_interval=10.0, timeout=600.0
+                    )
+                return result
+
+        status = run_async(_generate())
+
+        if not status:
+            console.print("[red]Video generation failed[/red]")
+        elif hasattr(status, "is_complete") and status.is_complete:
+            console.print(f"[green]Video ready:[/green] {status.url}")
+        elif hasattr(status, "is_failed") and status.is_failed:
+            console.print(f"[red]Failed:[/red] {status.error}")
+        else:
+            console.print(f"[yellow]Started:[/yellow] {status}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("slide-deck")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--format", "deck_format", type=click.Choice(["detailed", "presenter"]), default="detailed")
+@click.option("--length", "deck_length", type=click.Choice(["default", "short"]), default="default")
+@click.option("--language", default="en")
+@click.option("--wait/--no-wait", default=True)
+@click.pass_context
+def generate_slide_deck(ctx, description, notebook_id, deck_format, deck_length, language, wait):
+    """Generate slide deck.
+
+    \b
+    Example:
+      notebooklm generate slide-deck "include speaker notes"
+      notebooklm generate slide-deck "executive summary" --format presenter --length short
+    """
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        format_map = {"detailed": SlideDeckFormat.DETAILED_DECK, "presenter": SlideDeckFormat.PRESENTER_SLIDES}
+        length_map = {"default": SlideDeckLength.DEFAULT, "short": SlideDeckLength.SHORT}
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                result = await client.generate_slide_deck(
+                    nb_id, language=language, instructions=description or None,
+                    slide_deck_format=format_map[deck_format], slide_deck_length=length_map[deck_length],
+                )
+
+                if not result:
+                    return None
+
+                if wait and result.get("artifact_id"):
+                    console.print(f"[yellow]Generating slide deck...[/yellow] Task: {result.get('artifact_id')}")
+                    service = ArtifactService(client)
+                    return await service.wait_for_completion(
+                        nb_id, result["artifact_id"], poll_interval=10.0
+                    )
+                return result
+
+        status = run_async(_generate())
+
+        if not status:
+            console.print("[red]Slide deck generation failed[/red]")
+        elif hasattr(status, "is_complete") and status.is_complete:
+            console.print(f"[green]Slide deck ready:[/green] {status.url}")
+        else:
+            console.print(f"[yellow]Started:[/yellow] {status}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("quiz")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
+@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--wait/--no-wait", default=True)
+@click.pass_context
+def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait):
+    """Generate quiz.
+
+    \b
+    Example:
+      notebooklm generate quiz "focus on vocabulary terms"
+      notebooklm generate quiz "test key concepts" --difficulty hard --quantity more
+    """
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        quantity_map = {"fewer": QuizQuantity.FEWER, "standard": QuizQuantity.STANDARD, "more": QuizQuantity.MORE}
+        difficulty_map = {"easy": QuizDifficulty.EASY, "medium": QuizDifficulty.MEDIUM, "hard": QuizDifficulty.HARD}
 
         async def _generate():
             async with NotebookLMClient(auth) as client:
                 result = await client.generate_quiz(
-                    notebook_id,
-                    instructions=instructions,
-                    quantity=quantity_map[quantity],
-                    difficulty=difficulty_map[difficulty],
+                    nb_id, instructions=description or None,
+                    quantity=quantity_map[quantity], difficulty=difficulty_map[difficulty],
                 )
 
-                task_id = result[0] if isinstance(result, list) else None
+                if not result:
+                    return None
 
+                task_id = result.get("artifact_id") or (result[0] if isinstance(result, list) else None)
                 if wait and task_id:
-                    console.print(
-                        f"[yellow]Generating quiz...[/yellow] Task: {task_id}"
-                    )
+                    console.print(f"[yellow]Generating quiz...[/yellow]")
                     service = ArtifactService(client)
-                    status = await service.wait_for_completion(
-                        notebook_id, task_id, poll_interval=5.0
-                    )
-                    return status
-                return {"task_id": task_id}
+                    return await service.wait_for_completion(nb_id, task_id, poll_interval=5.0)
+                return result
 
         status = run_async(_generate())
 
-        if isinstance(status, dict):
-            task_id = status.get("task_id")
-            console.print(f"[yellow]Quiz generation started:[/yellow] Task {task_id}")
-        elif hasattr(status, "is_complete") and status.is_complete:
-            console.print(f"[green]Quiz ready[/green]")
-        elif hasattr(status, "is_failed") and status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
+        if hasattr(status, "is_complete") and status.is_complete:
+            console.print("[green]Quiz ready[/green]")
         else:
-            console.print(f"[yellow]Quiz generation started[/yellow]")
+            console.print(f"[yellow]Result:[/yellow] {status}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("generate-flashcards")
-@click.argument("notebook_id")
-@click.option(
-    "--quantity",
-    type=click.Choice(["fewer", "standard", "more"]),
-    default="standard",
-    help="Number of cards",
-)
-@click.option(
-    "--difficulty",
-    type=click.Choice(["easy", "medium", "hard"]),
-    default="medium",
-    help="Difficulty level",
-)
-@click.option("-i", "--instructions", help="Custom instructions")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+@generate.command("flashcards")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
+@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--wait/--no-wait", default=True)
 @click.pass_context
-def generate_flashcards(ctx, notebook_id, quantity, difficulty, instructions, wait):
-    """Generate flashcards from notebook content."""
+def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wait):
+    """Generate flashcards.
+
+    \b
+    Example:
+      notebooklm generate flashcards "vocabulary terms only"
+      notebooklm generate flashcards --quantity more --difficulty easy
+    """
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        quantity_map = {
-            "fewer": QuizQuantity.FEWER,
-            "standard": QuizQuantity.STANDARD,
-            "more": QuizQuantity.MORE,
-        }
-        difficulty_map = {
-            "easy": QuizDifficulty.EASY,
-            "medium": QuizDifficulty.MEDIUM,
-            "hard": QuizDifficulty.HARD,
-        }
+        quantity_map = {"fewer": QuizQuantity.FEWER, "standard": QuizQuantity.STANDARD, "more": QuizQuantity.MORE}
+        difficulty_map = {"easy": QuizDifficulty.EASY, "medium": QuizDifficulty.MEDIUM, "hard": QuizDifficulty.HARD}
 
         async def _generate():
             async with NotebookLMClient(auth) as client:
                 result = await client.generate_flashcards(
-                    notebook_id,
-                    instructions=instructions,
-                    quantity=quantity_map[quantity],
-                    difficulty=difficulty_map[difficulty],
+                    nb_id, instructions=description or None,
+                    quantity=quantity_map[quantity], difficulty=difficulty_map[difficulty],
                 )
 
-                task_id = result[0] if isinstance(result, list) else None
+                if not result:
+                    return None
 
+                task_id = result.get("artifact_id") or (result[0] if isinstance(result, list) else None)
                 if wait and task_id:
-                    console.print(
-                        f"[yellow]Generating flashcards...[/yellow] Task: {task_id}"
-                    )
+                    console.print(f"[yellow]Generating flashcards...[/yellow]")
                     service = ArtifactService(client)
-                    status = await service.wait_for_completion(
-                        notebook_id, task_id, poll_interval=5.0
-                    )
-                    return status
-                return {"task_id": task_id}
+                    return await service.wait_for_completion(nb_id, task_id, poll_interval=5.0)
+                return result
 
         status = run_async(_generate())
 
-        if isinstance(status, dict):
-            task_id = status.get("task_id")
-            console.print(
-                f"[yellow]Flashcards generation started:[/yellow] Task {task_id}"
-            )
-        elif hasattr(status, "is_complete") and status.is_complete:
-            console.print(f"[green]Flashcards ready[/green]")
-        elif hasattr(status, "is_failed") and status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
+        if hasattr(status, "is_complete") and status.is_complete:
+            console.print("[green]Flashcards ready[/green]")
         else:
-            console.print(f"[yellow]Flashcards generation started[/yellow]")
+            console.print(f"[yellow]Result:[/yellow] {status}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("generate-infographic")
-@click.argument("notebook_id")
-@click.option(
-    "--orientation",
-    type=click.Choice(["landscape", "portrait", "square"]),
-    default="landscape",
-    help="Orientation",
-)
-@click.option(
-    "--detail",
-    type=click.Choice(["concise", "standard", "detailed"]),
-    default="standard",
-    help="Detail level",
-)
-@click.option("-i", "--instructions", help="Custom instructions")
-@click.option("--language", default="en", help="Language code")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+@generate.command("infographic")
+@click.argument("description", default="", required=False)
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--orientation", type=click.Choice(["landscape", "portrait", "square"]), default="landscape")
+@click.option("--detail", type=click.Choice(["concise", "standard", "detailed"]), default="standard")
+@click.option("--language", default="en")
+@click.option("--wait/--no-wait", default=True)
 @click.pass_context
-def generate_infographic(
-    ctx, notebook_id, orientation, detail, instructions, language, wait
-):
-    """Generate infographic from notebook content."""
+def generate_infographic(ctx, description, notebook_id, orientation, detail, language, wait):
+    """Generate infographic.
+
+    \b
+    Example:
+      notebooklm generate infographic "include statistics and key findings"
+      notebooklm generate infographic --orientation portrait --detail detailed
+    """
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        orientation_map = {
-            "landscape": InfographicOrientation.LANDSCAPE,
-            "portrait": InfographicOrientation.PORTRAIT,
-            "square": InfographicOrientation.SQUARE,
-        }
-        detail_map = {
-            "concise": InfographicDetail.CONCISE,
-            "standard": InfographicDetail.STANDARD,
-            "detailed": InfographicDetail.DETAILED,
-        }
+        orientation_map = {"landscape": InfographicOrientation.LANDSCAPE, "portrait": InfographicOrientation.PORTRAIT, "square": InfographicOrientation.SQUARE}
+        detail_map = {"concise": InfographicDetail.CONCISE, "standard": InfographicDetail.STANDARD, "detailed": InfographicDetail.DETAILED}
 
         async def _generate():
             async with NotebookLMClient(auth) as client:
                 result = await client.generate_infographic(
-                    notebook_id,
-                    language=language,
-                    instructions=instructions,
-                    orientation=orientation_map[orientation],
-                    detail_level=detail_map[detail],
+                    nb_id, language=language, instructions=description or None,
+                    orientation=orientation_map[orientation], detail_level=detail_map[detail],
                 )
 
-                task_id = result[0] if isinstance(result, list) and result else None
+                if not result:
+                    return None
 
+                task_id = result.get("artifact_id") or (result[0] if isinstance(result, list) else None)
                 if wait and task_id:
-                    console.print(
-                        f"[yellow]Generating infographic...[/yellow] Task: {task_id}"
-                    )
+                    console.print(f"[yellow]Generating infographic...[/yellow]")
                     service = ArtifactService(client)
-                    status = await service.wait_for_completion(
-                        notebook_id, task_id, poll_interval=5.0
-                    )
-                    return status
-                return {"task_id": task_id}
+                    return await service.wait_for_completion(nb_id, task_id, poll_interval=5.0)
+                return result
 
         status = run_async(_generate())
 
-        if isinstance(status, dict):
-            task_id = status.get("task_id")
-            console.print(
-                f"[yellow]Infographic generation started:[/yellow] Task {task_id}"
-            )
-        elif hasattr(status, "is_complete") and status.is_complete:
-            console.print(f"[green]Infographic ready[/green]")
-        elif hasattr(status, "is_failed") and status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
+        if hasattr(status, "is_complete") and status.is_complete:
+            console.print("[green]Infographic ready[/green]")
         else:
-            console.print(f"[yellow]Infographic generation started[/yellow]")
+            console.print(f"[yellow]Result:[/yellow] {status}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("generate-data-table")
-@click.argument("notebook_id")
-@click.option(
-    "-i",
-    "--instructions",
-    required=True,
-    help="Instructions describing table structure",
-)
-@click.option("--language", default="en", help="Language code")
-@click.option("--wait/--no-wait", default=True, help="Wait for completion")
+@generate.command("data-table")
+@click.argument("description")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--language", default="en")
+@click.option("--wait/--no-wait", default=True)
 @click.pass_context
-def generate_data_table(ctx, notebook_id, instructions, language, wait):
-    """Generate data table from notebook content."""
+def generate_data_table(ctx, description, notebook_id, language, wait):
+    """Generate data table.
+
+    \b
+    Example:
+      notebooklm generate data-table "comparison of key concepts"
+      notebooklm generate data-table "timeline of events"
+    """
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _generate():
             async with NotebookLMClient(auth) as client:
-                result = await client.generate_data_table(
-                    notebook_id,
-                    language=language,
-                    instructions=instructions,
-                )
+                result = await client.generate_data_table(nb_id, language=language, instructions=description)
 
-                task_id = result[0] if isinstance(result, list) and result else None
+                if not result:
+                    return None
 
+                task_id = result.get("artifact_id") or (result[0] if isinstance(result, list) else None)
                 if wait and task_id:
-                    console.print(
-                        f"[yellow]Generating data table...[/yellow] Task: {task_id}"
-                    )
+                    console.print(f"[yellow]Generating data table...[/yellow]")
                     service = ArtifactService(client)
-                    status = await service.wait_for_completion(
-                        notebook_id, task_id, poll_interval=5.0
-                    )
-                    return status
-                return {"task_id": task_id}
+                    return await service.wait_for_completion(nb_id, task_id, poll_interval=5.0)
+                return result
 
         status = run_async(_generate())
 
-        if isinstance(status, dict):
-            task_id = status.get("task_id")
-            console.print(
-                f"[yellow]Data table generation started:[/yellow] Task {task_id}"
-            )
-        elif hasattr(status, "is_complete") and status.is_complete:
-            console.print(f"[green]Data table ready[/green]")
-        elif hasattr(status, "is_failed") and status.is_failed:
-            console.print(f"[red]Generation failed:[/red] {status.error}")
+        if hasattr(status, "is_complete") and status.is_complete:
+            console.print("[green]Data table ready[/green]")
         else:
-            console.print(f"[yellow]Data table generation started[/yellow]")
+            console.print(f"[yellow]Result:[/yellow] {status}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-# ==================== DOWNLOAD OPERATIONS ====================
-
-
-@cli.command("download-audio")
-@click.argument("notebook_id")
-@click.argument("output_path", type=click.Path())
-@click.option("--artifact-id", help="Specific audio artifact ID (optional)")
+@generate.command("mind-map")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.pass_context
-def download_audio(ctx, notebook_id, output_path, artifact_id):
-    """Download audio overview to file."""
+def generate_mind_map(ctx, notebook_id):
+    """Generate mind map."""
     try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                return await client.generate_mind_map(nb_id)
+
+        with console.status("Generating mind map..."):
+            result = run_async(_generate())
+
+        if result:
+            console.print("[green]Mind map generated:[/green]")
+            if isinstance(result, dict):
+                console.print(f"  Note ID: {result.get('note_id', '-')}")
+                mind_map = result.get("mind_map", {})
+                if isinstance(mind_map, dict):
+                    console.print(f"  Root: {mind_map.get('name', '-')}")
+                    console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
+            else:
+                console.print(result)
+        else:
+            console.print("[yellow]No result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("timeline")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def generate_timeline(ctx, notebook_id):
+    """Generate timeline."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                return await client.generate_timeline(nb_id)
+
+        with console.status("Generating timeline..."):
+            result = run_async(_generate())
+
+        if result:
+            console.print("[green]Timeline generated:[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]No result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("study-guide")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def generate_study_guide(ctx, notebook_id):
+    """Generate study guide."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                return await client.generate_study_guide(nb_id)
+
+        with console.status("Generating study guide..."):
+            result = run_async(_generate())
+
+        if result:
+            console.print("[green]Study guide generated:[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]No result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("faq")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def generate_faq(ctx, notebook_id):
+    """Generate FAQ."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                return await client.generate_faq(nb_id)
+
+        with console.status("Generating FAQ..."):
+            result = run_async(_generate())
+
+        if result:
+            console.print("[green]FAQ generated:[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]No result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@generate.command("briefing-doc")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def generate_briefing_doc(ctx, notebook_id):
+    """Generate briefing document."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _generate():
+            async with NotebookLMClient(auth) as client:
+                return await client.generate_briefing_doc(nb_id)
+
+        with console.status("Generating briefing document..."):
+            result = run_async(_generate())
+
+        if result:
+            console.print("[green]Briefing document generated:[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]No result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# DOWNLOAD GROUP
+# =============================================================================
+
+
+@cli.group()
+def download():
+    """Download generated content.
+
+    \b
+    Types:
+      audio        Download audio file
+      video        Download video file
+      slide-deck   Download slide deck images
+      infographic  Download infographic image
+    """
+    pass
+
+
+@download.command("audio")
+@click.argument("output_path", type=click.Path())
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--artifact-id", help="Specific artifact ID")
+@click.pass_context
+def download_audio(ctx, output_path, notebook_id, artifact_id):
+    """Download audio to file."""
+    try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _download():
             async with NotebookLMClient(auth) as client:
-                return await client.download_audio(
-                    notebook_id, output_path, artifact_id=artifact_id
-                )
+                return await client.download_audio(nb_id, output_path, artifact_id=artifact_id)
 
-        with console.status(f"Downloading audio to {output_path}..."):
+        with console.status(f"Downloading audio..."):
             result_path = run_async(_download())
 
         console.print(f"[green]Audio saved to:[/green] {result_path}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("download-video")
-@click.argument("notebook_id")
+@download.command("video")
 @click.argument("output_path", type=click.Path())
-@click.option("--artifact-id", help="Specific video artifact ID (optional)")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--artifact-id", help="Specific artifact ID")
 @click.pass_context
-def download_video(ctx, notebook_id, output_path, artifact_id):
-    """Download video overview to file."""
+def download_video(ctx, output_path, notebook_id, artifact_id):
+    """Download video to file."""
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _download():
             async with NotebookLMClient(auth) as client:
-                return await client.download_video(
-                    notebook_id, output_path, artifact_id=artifact_id
-                )
+                return await client.download_video(nb_id, output_path, artifact_id=artifact_id)
 
-        with console.status(f"Downloading video to {output_path}..."):
+        with console.status(f"Downloading video..."):
             result_path = run_async(_download())
 
         console.print(f"[green]Video saved to:[/green] {result_path}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("download-infographic")
-@click.argument("notebook_id")
-@click.argument("output_path", type=click.Path())
-@click.option("--artifact-id", help="Specific infographic artifact ID (optional)")
+@download.command("slide-deck")
+@click.argument("output_dir", type=click.Path())
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--artifact-id", help="Specific artifact ID")
 @click.pass_context
-def download_infographic(ctx, notebook_id, output_path, artifact_id):
-    """Download infographic image to file."""
+def download_slide_deck(ctx, output_dir, notebook_id, artifact_id):
+    """Download slide deck images to directory."""
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _download():
             async with NotebookLMClient(auth) as client:
-                return await client.download_infographic(
-                    notebook_id, output_path, artifact_id=artifact_id
-                )
+                return await client.download_slide_deck(nb_id, output_dir, artifact_id=artifact_id)
 
-        with console.status(f"Downloading infographic to {output_path}..."):
+        with console.status(f"Downloading slide deck..."):
+            paths = run_async(_download())
+
+        console.print(f"[green]Downloaded {len(paths)} images to:[/green] {output_dir}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@download.command("infographic")
+@click.argument("output_path", type=click.Path())
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--artifact-id", help="Specific artifact ID")
+@click.pass_context
+def download_infographic(ctx, output_path, notebook_id, artifact_id):
+    """Download infographic to file."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _download():
+            async with NotebookLMClient(auth) as client:
+                return await client.download_infographic(nb_id, output_path, artifact_id=artifact_id)
+
+        with console.status(f"Downloading infographic..."):
             result_path = run_async(_download())
 
         console.print(f"[green]Infographic saved to:[/green] {result_path}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("download-slides")
-@click.argument("notebook_id")
-@click.argument("output_dir", type=click.Path())
-@click.option("--artifact-id", help="Specific slide deck artifact ID (optional)")
+# =============================================================================
+# NOTE GROUP
+# =============================================================================
+
+
+@cli.group()
+def note():
+    """Note management commands.
+
+    \b
+    Commands:
+      list    List all notes
+      create  Create a new note
+      get     Get note content
+      save    Update note content
+      delete  Delete a note
+    """
+    pass
+
+
+@note.command("list")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.pass_context
-def download_slides(ctx, notebook_id, output_dir, artifact_id):
-    """Download slide deck images to directory."""
+def note_list(ctx, notebook_id):
+    """List all notes in a notebook."""
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        async def _download():
+        async def _list():
             async with NotebookLMClient(auth) as client:
-                return await client.download_slide_deck(
-                    notebook_id, output_dir, artifact_id=artifact_id
-                )
+                return await client.list_notes(nb_id)
 
-        with console.status(f"Downloading slides to {output_dir}..."):
-            paths = run_async(_download())
+        notes = run_async(_list())
 
-        console.print(f"[green]Downloaded {len(paths)} slides to:[/green] {output_dir}")
-        for i, path in enumerate(paths, 1):
-            console.print(f"  {i}. {path}")
+        if not notes:
+            console.print("[yellow]No notes found[/yellow]")
+            return
+
+        table = Table(title=f"Notes in {nb_id}")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="green")
+        table.add_column("Preview", style="dim", max_width=50)
+
+        for n in notes:
+            if isinstance(n, dict):
+                preview = n.get("content", "")[:50]
+                table.add_row(n.get("id", "-"), n.get("title", "Untitled"), preview + "..." if len(n.get("content", "")) > 50 else preview)
+
+        console.print(table)
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-# ==================== OTHER OPERATIONS ====================
-
-
-@cli.command("get-summary")
-@click.argument("notebook_id")
+@note.command("create")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--title", default="Untitled Note", help="Note title")
+@click.option("--content", default="", help="Note content")
 @click.pass_context
-def get_summary(ctx, notebook_id):
-    """Get notebook summary/briefing doc."""
+def note_create(ctx, notebook_id, title, content):
+    """Create a new note."""
     try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _create():
+            async with NotebookLMClient(auth) as client:
+                return await client.create_note(nb_id, title, content)
+
+        result = run_async(_create())
+
+        if result:
+            console.print("[green]Note created[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]Creation may have failed[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@note.command("get")
+@click.argument("note_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def note_get(ctx, note_id, notebook_id):
+    """Get note content."""
+    try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _get():
             async with NotebookLMClient(auth) as client:
-                return await client.get_summary(notebook_id)
+                return await client.get_note(nb_id, note_id)
 
-        summary = run_async(_get())
+        n = run_async(_get())
 
-        # Try to extract readable text from the response
-        if summary and isinstance(summary, list):
-            # Navigate the nested structure to find the summary text
-            console.print("[bold cyan]Summary:[/bold cyan]")
-            console.print(summary)
+        if n:
+            if isinstance(n, dict):
+                console.print(f"[bold cyan]Title:[/bold cyan] {n.get('title', 'Untitled')}")
+                console.print(f"[bold cyan]Content:[/bold cyan]\n{n.get('content', '')}")
+            else:
+                console.print(n)
         else:
-            console.print("[yellow]No summary available[/yellow]")
+            console.print("[yellow]Note not found[/yellow]")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
 
 
-@cli.command("get-conversation-history")
-@click.argument("notebook_id")
-@click.option("--limit", default=20, help="Number of messages to retrieve")
+@note.command("save")
+@click.argument("note_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--title", help="New title")
+@click.option("--content", help="New content")
 @click.pass_context
-def get_conversation_history(ctx, notebook_id, limit):
-    """Get chat conversation history."""
+def note_save(ctx, note_id, notebook_id, title, content):
+    """Update note content."""
+    if not title and not content:
+        console.print("[yellow]Provide --title and/or --content[/yellow]")
+        return
+
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        async def _get():
+        async def _save():
             async with NotebookLMClient(auth) as client:
-                return await client.get_conversation_history(notebook_id, limit=limit)
+                return await client.save_note_content(nb_id, note_id, content=content, title=title)
 
-        history = run_async(_get())
-
-        console.print(f"[bold cyan]Conversation History (last {limit}):[/bold cyan]")
-        if history:
-            console.print(history)
-        else:
-            console.print("[yellow]No conversation history found[/yellow]")
+        run_async(_save())
+        console.print(f"[green]Note updated:[/green] {note_id}")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise SystemExit(1)
+        handle_error(e)
+
+
+@note.command("delete")
+@click.argument("note_id")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def note_delete(ctx, note_id, notebook_id, yes):
+    """Delete a note."""
+    if not yes and not click.confirm(f"Delete note {note_id}?"):
+        return
+
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _delete():
+            async with NotebookLMClient(auth) as client:
+                return await client.delete_note(nb_id, note_id)
+
+        run_async(_delete())
+        console.print(f"[green]Deleted note:[/green] {note_id}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# MISC GROUP (guidebooks, share-audio)
+# =============================================================================
+
+
+@cli.command("share-audio")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.option("--public/--private", default=False, help="Make audio public or private")
+@click.pass_context
+def share_audio_cmd(ctx, notebook_id, public):
+    """Share or unshare audio overview."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _share():
+            async with NotebookLMClient(auth) as client:
+                return await client.share_audio(nb_id, public=public)
+
+        result = run_async(_share())
+
+        if result:
+            status = "public" if public else "private"
+            console.print(f"[green]Audio is now {status}[/green]")
+            console.print(result)
+        else:
+            console.print("[yellow]Share returned no result[/yellow]")
+
+    except Exception as e:
+        handle_error(e)
+
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
 
 
 def main():

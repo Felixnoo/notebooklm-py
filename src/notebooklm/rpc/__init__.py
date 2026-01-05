@@ -13,8 +13,8 @@ from .types import (
     QuizDifficulty,
     InfographicOrientation,
     InfographicDetail,
-    SlidesFormat,
-    SlidesLength,
+    SlideDeckFormat,
+    SlideDeckLength,
 )
 from .encoder import encode_rpc_request, build_request_body
 from .decoder import (

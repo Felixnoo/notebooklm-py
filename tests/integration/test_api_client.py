@@ -244,7 +244,9 @@ class TestStudioContent:
         )
         httpx_mock.add_response(content=notebook_response.encode())
 
-        response = build_rpc_response("R7cb6c", ["task_id_123", "pending"])
+        # Mock response with artifact data: [artifact_id, title, create_time, ..., status_code]
+        # Position [4] = 1 means "in_progress", 3 means "completed"
+        response = build_rpc_response("R7cb6c", [["artifact_123", "Audio Overview", "2024-01-05", None, 1]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -252,7 +254,9 @@ class TestStudioContent:
                 notebook_id="nb_123",
             )
 
-        assert result[0] == "task_id_123"
+        assert result["artifact_id"] == "artifact_123"
+        assert result["status"] == "in_progress"
+        assert result["title"] == "Audio Overview"
 
         request = httpx_mock.get_requests()[-1]
         assert "R7cb6c" in str(request.url)
@@ -271,7 +275,7 @@ class TestStudioContent:
         )
         httpx_mock.add_response(content=notebook_response.encode())
 
-        response = build_rpc_response("R7cb6c", ["task_id_123", "pending"])
+        response = build_rpc_response("R7cb6c", [["artifact_123", "Audio Overview", "2024-01-05", None, 1]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -281,7 +285,8 @@ class TestStudioContent:
                 audio_length=AudioLength.LONG,
             )
 
-        assert result[0] == "task_id_123"
+        assert result["artifact_id"] == "artifact_123"
+        assert result["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_generate_video_with_format_and_style(
@@ -295,7 +300,7 @@ class TestStudioContent:
         notebook_response = build_rpc_response(
             "rLM1Ne", [["Test Notebook", [[["source_123"], "Source"]], "nb_123"]]
         )
-        video_response = build_rpc_response("R7cb6c", ["task_id_456", "pending"])
+        video_response = build_rpc_response("R7cb6c", [["artifact_456", "Video Overview", "2024-01-05", None, 1]])
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=video_response.encode())
 
@@ -306,10 +311,11 @@ class TestStudioContent:
                 video_style=VideoStyle.ANIME,
             )
 
-        assert result[0] == "task_id_456"
+        assert result["artifact_id"] == "artifact_456"
+        assert result["status"] == "in_progress"
 
     @pytest.mark.asyncio
-    async def test_generate_slides(
+    async def test_generate_slide_deck(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
@@ -318,14 +324,15 @@ class TestStudioContent:
         notebook_response = build_rpc_response(
             "rLM1Ne", [["Test Notebook", [[["source_123"], "Source"]], "nb_123"]]
         )
-        slides_response = build_rpc_response("R7cb6c", ["task_id_456", "pending"])
+        slide_deck_response = build_rpc_response("R7cb6c", [["artifact_456", "Slide Deck", "2024-01-05", None, 1]])
         httpx_mock.add_response(content=notebook_response.encode())
-        httpx_mock.add_response(content=slides_response.encode())
+        httpx_mock.add_response(content=slide_deck_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.generate_slides(notebook_id="nb_123")
+            result = await client.generate_slide_deck(notebook_id="nb_123")
 
-        assert result[0] == "task_id_456"
+        assert result["artifact_id"] == "artifact_456"
+        assert result["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_poll_studio_status(
@@ -466,14 +473,15 @@ class TestGenerateQuiz:
         notebook_response = build_rpc_response(
             "rLM1Ne", [["Test Notebook", [[["source_123"], "Source"]], "nb_123"]]
         )
-        quiz_response = build_rpc_response("R7cb6c", {"task_id": "quiz_123"})
+        quiz_response = build_rpc_response("R7cb6c", [["quiz_123", "Quiz", "2024-01-05", None, 1]])
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=quiz_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.generate_quiz("nb_123")
 
-        assert result == {"task_id": "quiz_123"}
+        assert result["artifact_id"] == "quiz_123"
+        assert result["status"] == "in_progress"
 
 
 class TestDeleteStudioContent:

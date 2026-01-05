@@ -191,35 +191,51 @@ class TestArtifactService:
     @pytest.mark.asyncio
     async def test_generate_audio(self, auth_tokens):
         mock_client = AsyncMock()
-        mock_client.generate_audio.return_value = ["task_001", "pending"]
+        mock_client.generate_audio.return_value = {
+            "artifact_id": "task_001",
+            "status": "in_progress",
+            "title": "Audio Overview",
+            "create_time": "2024-01-05"
+        }
 
         service = ArtifactService(mock_client)
         status = await service.generate_audio("nb_001")
 
         assert status.task_id == "task_001"
-        assert status.status == "pending"
+        assert status.status == "in_progress"
 
     @pytest.mark.asyncio
     async def test_generate_audio_with_instructions(self, auth_tokens):
         mock_client = AsyncMock()
-        mock_client.generate_audio.return_value = ["task_002", "pending"]
+        mock_client.generate_audio.return_value = {
+            "artifact_id": "task_002",
+            "status": "in_progress",
+            "title": "Audio Overview",
+            "create_time": "2024-01-05"
+        }
 
         service = ArtifactService(mock_client)
-        await service.generate_audio("nb_001", host_instructions="Be casual")
+        await service.generate_audio("nb_001", instructions="Be casual")
 
         mock_client.generate_audio.assert_called_once_with(
-            "nb_001", host_instructions="Be casual"
+            "nb_001", instructions="Be casual"
         )
 
     @pytest.mark.asyncio
-    async def test_generate_slides(self, auth_tokens):
+    async def test_generate_slide_deck(self, auth_tokens):
         mock_client = AsyncMock()
-        mock_client.generate_slides.return_value = ["task_003", "pending"]
+        mock_client.generate_slide_deck.return_value = {
+            "artifact_id": "task_003",
+            "status": "in_progress",
+            "title": "Slide Deck",
+            "create_time": "2024-01-05"
+        }
 
         service = ArtifactService(mock_client)
-        status = await service.generate_slides("nb_001")
+        status = await service.generate_slide_deck("nb_001")
 
         assert status.task_id == "task_003"
+        assert status.status == "in_progress"
 
     @pytest.mark.asyncio
     async def test_poll_status(self, auth_tokens):

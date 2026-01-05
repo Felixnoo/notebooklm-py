@@ -77,9 +77,9 @@ class TestStudioContentType:
         """Test VIDEO content type code."""
         assert StudioContentType.VIDEO == 3
 
-    def test_slides_type(self):
-        """Test SLIDES content type code."""
-        assert StudioContentType.SLIDES == 8
+    def test_slide_deck_type(self):
+        """Test SLIDE_DECK content type code."""
+        assert StudioContentType.SLIDE_DECK == 8
 
     def test_report_type(self):
         """Test REPORT content type code."""

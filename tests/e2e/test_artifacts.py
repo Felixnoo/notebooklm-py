@@ -74,8 +74,15 @@ class TestFlashcardsGeneration:
 @requires_auth
 @pytest.mark.e2e
 class TestInfographicGeneration:
+    """Infographic generation tests.
+
+    Note: These tests may fail due to API rate limiting or quota restrictions.
+    Infographic generation is documented as unreliable in E2E tests.
+    """
+
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.xfail(reason="Infographic API may be rate-limited or quota-restricted")
     async def test_generate_infographic_default(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
@@ -84,6 +91,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.xfail(reason="Infographic API may be rate-limited or quota-restricted")
     async def test_generate_infographic_portrait_detailed(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
@@ -99,6 +107,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.xfail(reason="Infographic API may be rate-limited or quota-restricted")
     async def test_generate_infographic_square_concise(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
@@ -113,6 +122,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.xfail(reason="Infographic API may be rate-limited or quota-restricted")
     async def test_generate_infographic_landscape(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
@@ -127,41 +137,50 @@ class TestInfographicGeneration:
 
 @requires_auth
 @pytest.mark.e2e
-class TestSlidesGeneration:
+class TestSlideDeckGeneration:
+    """Slide deck generation tests.
+
+    Note: These tests may fail due to API rate limiting or quota restrictions.
+    Slide deck generation is documented as unreliable in E2E tests.
+    """
+
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_generate_slides_default(
+    @pytest.mark.xfail(reason="Slide deck API may be rate-limited or quota-restricted")
+    async def test_generate_slide_deck_default(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
-        result = await client.generate_slides(test_notebook_id)
+        result = await client.generate_slide_deck(test_notebook_id)
         assert result is not None
 
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_generate_slides_detailed_deck(
+    @pytest.mark.xfail(reason="Slide deck API may be rate-limited or quota-restricted")
+    async def test_generate_slide_deck_detailed(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
-        from notebooklm.rpc import SlidesFormat, SlidesLength
+        from notebooklm.rpc import SlideDeckFormat, SlideDeckLength
 
-        result = await client.generate_slides(
+        result = await client.generate_slide_deck(
             test_notebook_id,
-            slides_format=SlidesFormat.DETAILED_DECK,
-            slides_length=SlidesLength.DEFAULT,
+            slide_deck_format=SlideDeckFormat.DETAILED_DECK,
+            slide_deck_length=SlideDeckLength.DEFAULT,
             instructions="Include speaker notes",
         )
         assert result is not None
 
     @pytest.mark.asyncio
     @pytest.mark.slow
-    async def test_generate_slides_presenter_short(
+    @pytest.mark.xfail(reason="Slide deck API may be rate-limited or quota-restricted")
+    async def test_generate_slide_deck_presenter_short(
         self, client, test_notebook_id, created_artifacts, cleanup_artifacts
     ):
-        from notebooklm.rpc import SlidesFormat, SlidesLength
+        from notebooklm.rpc import SlideDeckFormat, SlideDeckLength
 
-        result = await client.generate_slides(
+        result = await client.generate_slide_deck(
             test_notebook_id,
-            slides_format=SlidesFormat.PRESENTER_SLIDES,
-            slides_length=SlidesLength.SHORT,
+            slide_deck_format=SlideDeckFormat.PRESENTER_SLIDES,
+            slide_deck_length=SlideDeckLength.SHORT,
         )
         assert result is not None
 
@@ -216,7 +235,14 @@ class TestMindMapGeneration:
     @pytest.mark.slow
     async def test_generate_mind_map(self, client, test_notebook_id):
         result = await client.generate_mind_map(test_notebook_id)
-        assert result is not None or result is None
+        assert result is not None
+        assert "mind_map" in result
+        assert "note_id" in result
+        # Verify mind map structure
+        mind_map = result["mind_map"]
+        assert isinstance(mind_map, dict)
+        assert "name" in mind_map
+        assert "children" in mind_map
 
 
 @requires_auth

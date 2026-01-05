@@ -82,15 +82,22 @@ ARTIFACT_TYPE_MAP = {
 }
 
 
-def get_artifact_type_display(artifact_type: int) -> str:
+def get_artifact_type_display(artifact_type: int, variant: int = None) -> str:
     """Get display string for artifact type.
 
     Args:
         artifact_type: StudioContentType enum value
+        variant: Optional variant code (for type 4: 1=flashcards, 2=quiz)
 
     Returns:
         Display string with emoji
     """
+    # Handle quiz/flashcards distinction (both use type 4)
+    if artifact_type == 4 and variant is not None:
+        if variant == 1:
+            return "🃏 Flashcards"
+        elif variant == 2:
+            return "📝 Quiz"
     return ARTIFACT_TYPE_DISPLAY.get(artifact_type, f"Unknown ({artifact_type})")
 
 
@@ -1277,7 +1284,7 @@ def artifact_list(ctx, notebook_id, artifact_type):
         table.add_column("Status", style="yellow")
 
         for art in artifacts:
-            type_display = get_artifact_type_display(art.artifact_type)
+            type_display = get_artifact_type_display(art.artifact_type, art.variant)
             created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
             status = "completed" if art.is_completed else "processing" if art.is_processing else str(art.status)
             table.add_row(art.id, art.title, type_display, created, status)
@@ -1310,7 +1317,7 @@ def artifact_get(ctx, artifact_id, notebook_id):
         if artifact:
             console.print(f"[bold cyan]Artifact:[/bold cyan] {artifact.id}")
             console.print(f"[bold]Title:[/bold] {artifact.title}")
-            console.print(f"[bold]Type:[/bold] {get_artifact_type_display(artifact.artifact_type)}")
+            console.print(f"[bold]Type:[/bold] {get_artifact_type_display(artifact.artifact_type, artifact.variant)}")
             console.print(f"[bold]Status:[/bold] {'completed' if artifact.is_completed else 'processing' if artifact.is_processing else str(artifact.status)}")
             if artifact.created_at:
                 console.print(f"[bold]Created:[/bold] {artifact.created_at.strftime('%Y-%m-%d %H:%M')}")

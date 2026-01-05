@@ -19,12 +19,15 @@ class Artifact:
     status: int  # 1=processing, 3=completed
     created_at: Optional[datetime] = None
     url: Optional[str] = None
+    variant: Optional[int] = None  # For type 4: 1=flashcards, 2=quiz
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Artifact":
         """Parse artifact from API response.
 
         Structure: [id, title, type, ..., status, ..., metadata, ...]
+        Position 9 contains options with variant code at [9][1][0]:
+          - For type 4: 1=flashcards, 2=quiz
         """
         artifact_id = data[0] if len(data) > 0 else ""
         title = data[1] if len(data) > 1 else ""
@@ -39,12 +42,20 @@ class Artifact:
             except (TypeError, ValueError):
                 pass
 
+        # Extract variant code from data[9][1][0] for quiz/flashcard distinction
+        variant = None
+        if len(data) > 9 and isinstance(data[9], list) and len(data[9]) > 1:
+            options = data[9][1]
+            if isinstance(options, list) and len(options) > 0:
+                variant = options[0]
+
         return cls(
             id=str(artifact_id),
             title=str(title),
             artifact_type=artifact_type,
             status=status,
-            created_at=created_at
+            created_at=created_at,
+            variant=variant,
         )
 
     @property
@@ -56,6 +67,16 @@ class Artifact:
     def is_processing(self) -> bool:
         """Check if artifact is still processing."""
         return self.status == 1
+
+    @property
+    def is_quiz(self) -> bool:
+        """Check if this is a quiz (type 4, variant 2)."""
+        return self.artifact_type == 4 and self.variant == 2
+
+    @property
+    def is_flashcards(self) -> bool:
+        """Check if this is flashcards (type 4, variant 1)."""
+        return self.artifact_type == 4 and self.variant == 1
 
 
 @dataclass

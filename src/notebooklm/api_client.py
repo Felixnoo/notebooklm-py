@@ -1714,7 +1714,11 @@ class NotebookLMClient:
         )
 
     async def delete_note(self, notebook_id: str, note_id: str) -> Any:
-        """Delete a note from the notebook."""
+        """Delete a note from the notebook.
+
+        Note: This clears the note content/title rather than removing it from the list.
+        Google may garbage collect cleared notes later.
+        """
         params = [notebook_id, None, [note_id]]
         return await self._rpc_call(
             RPCMethod.DELETE_NOTE,

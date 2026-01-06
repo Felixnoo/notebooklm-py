@@ -22,6 +22,7 @@ from .rpc import (
     ReportFormat,
     BATCHEXECUTE_URL,
     QUERY_URL,
+    UPLOAD_URL,
     encode_rpc_request,
     build_request_body,
     decode_response,
@@ -787,21 +788,155 @@ class NotebookLMClient:
             source_path=f"/notebook/{notebook_id}",
         )
 
+    async def _start_resumable_upload(
+        self,
+        notebook_id: str,
+        filename: str,
+        file_size: int,
+        source_id: str,
+    ) -> str:
+        """Start a resumable upload session and get the upload URL.
+
+        Args:
+            notebook_id: The notebook ID.
+            filename: Name of the file to upload.
+            file_size: Size of the file in bytes.
+            source_id: Pre-generated UUID for the source.
+
+        Returns:
+            The upload URL with upload_id parameter.
+        """
+        import json
+
+        url = f"{UPLOAD_URL}?authuser=0"
+
+        # Match browser headers exactly
+        headers = {
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "Cookie": self.auth.cookie_header,
+            "Origin": "https://notebooklm.google.com",
+            "Referer": "https://notebooklm.google.com/",
+            "x-goog-authuser": "0",
+            "x-goog-upload-command": "start",
+            "x-goog-upload-header-content-length": str(file_size),
+            "x-goog-upload-protocol": "resumable",
+        }
+
+        body = json.dumps({
+            "PROJECT_ID": notebook_id,
+            "SOURCE_NAME": filename,
+            "SOURCE_ID": source_id,
+        })
+
+        # Use a fresh client to avoid header conflicts with default client
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, headers=headers, content=body)
+            response.raise_for_status()
+
+            # The upload URL is returned in the x-goog-upload-url header
+            upload_url = response.headers.get("x-goog-upload-url")
+            if not upload_url:
+                raise ValueError("Failed to get upload URL from response headers")
+
+            return upload_url
+
+    async def _upload_file_content(
+        self,
+        upload_url: str,
+        content: bytes,
+    ) -> None:
+        """Upload file content to the resumable upload URL.
+
+        Args:
+            upload_url: The upload URL from _start_resumable_upload.
+            content: The file content as bytes.
+        """
+        # Match browser headers exactly
+        headers = {
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+            "Cookie": self.auth.cookie_header,
+            "Origin": "https://notebooklm.google.com",
+            "Referer": "https://notebooklm.google.com/",
+            "x-goog-authuser": "0",
+            "x-goog-upload-command": "upload, finalize",
+            "x-goog-upload-offset": "0",
+        }
+
+        # Use a fresh client with longer timeout for large file uploads
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(upload_url, headers=headers, content=content)
+            response.raise_for_status()
+
+    async def _register_file_source(
+        self,
+        notebook_id: str,
+        filename: str,
+    ) -> str:
+        """Register a file source intent using o4cbdc RPC.
+
+        This creates a tentative source entry and returns the SOURCE_ID
+        that must be used in the subsequent upload.
+
+        Args:
+            notebook_id: The notebook ID.
+            filename: The filename to register.
+
+        Returns:
+            The SOURCE_ID to use in the upload.
+        """
+        # Params format from browser capture:
+        # [[["filename"]], notebook_id, [2], [1,null,null,null,null,null,null,null,null,null,[1]]]
+        params = [
+            [[[filename]]],
+            notebook_id,
+            [2],
+            [1, None, None, None, None, None, None, None, None, None, [1]],
+        ]
+
+        result = await self._rpc_call(
+            RPCMethod.ADD_SOURCE_FILE,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+
+        # Parse SOURCE_ID from response
+        # Response format: [[[[source_id], filename, [null,null,null,null,0]]], ...]
+        if result and isinstance(result, list) and len(result) > 0:
+            first_item = result[0]
+            if isinstance(first_item, list) and len(first_item) > 0:
+                source_info = first_item[0]
+                if isinstance(source_info, list) and len(source_info) > 0:
+                    source_id_wrapper = source_info[0]
+                    if isinstance(source_id_wrapper, list) and len(source_id_wrapper) > 0:
+                        source_id = source_id_wrapper[0]
+                        if isinstance(source_id, str):
+                            return source_id
+
+        raise ValueError("Failed to get SOURCE_ID from o4cbdc response")
+
     async def add_source_file(
         self,
         notebook_id: str,
         file_path: Union[str, "Path"],
         mime_type: Optional[str] = None,
     ) -> Any:
-        """Add a file source to a notebook using native upload.
+        """Add a file source to a notebook using resumable upload.
+
+        Uses Google's resumable upload protocol:
+        1. Register source intent with RPC (o4cbdc) → get SOURCE_ID
+        2. Start upload session with SOURCE_ID (get upload URL)
+        3. Upload file content
 
         Args:
             notebook_id: The notebook ID.
             file_path: Path to the file to upload.
-            mime_type: MIME type of the file. If None, auto-detect from extension.
+            mime_type: MIME type of the file (not used in current implementation).
 
         Returns:
-            API response with source ID.
+            The SOURCE_ID of the created source.
 
         Supported file types:
             - PDF: application/pdf
@@ -810,40 +945,31 @@ class NotebookLMClient:
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
         """
         from pathlib import Path
-        import base64
-        import mimetypes
 
         file_path = Path(file_path)
 
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Auto-detect MIME type if not provided
-        if mime_type is None:
-            mime_type, _ = mimetypes.guess_type(str(file_path))
-            if mime_type is None:
-                # Default to text/plain for unknown types
-                mime_type = "text/plain"
-
-        # Read and encode file content
+        # Read file content
         with open(file_path, "rb") as f:
             content = f.read()
 
-        base64_content = base64.b64encode(content).decode("utf-8")
         filename = file_path.name
+        file_size = len(content)
 
-        # Build source data array for file upload
-        # Format: [base64_content, filename, mime_type, "base64"]
-        source_data = [base64_content, filename, mime_type, "base64"]
+        # Step 1: Register source intent with RPC → get SOURCE_ID
+        source_id = await self._register_file_source(notebook_id, filename)
 
-        params = [[source_data], notebook_id, [2]]
-
-        return await self._rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+        # Step 2: Start resumable upload with the SOURCE_ID from step 1
+        upload_url = await self._start_resumable_upload(
+            notebook_id, filename, file_size, source_id
         )
+
+        # Step 3: Upload file content
+        await self._upload_file_content(upload_url, content)
+
+        return source_id
 
     async def get_summary(self, notebook_id: str) -> Any:
         params = [notebook_id, [2]]

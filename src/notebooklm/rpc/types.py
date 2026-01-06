@@ -6,6 +6,7 @@ from enum import Enum
 # NotebookLM API endpoints
 BATCHEXECUTE_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
 QUERY_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
+UPLOAD_URL = "https://notebooklm.google.com/upload/_/"
 
 
 class RPCMethod(str, Enum):
@@ -24,6 +25,7 @@ class RPCMethod(str, Enum):
 
     # Source operations
     ADD_SOURCE = "izAoDd"
+    ADD_SOURCE_FILE = "o4cbdc"  # Register uploaded file as source
     DELETE_SOURCE = "tGMBJ"
     GET_SOURCE = "hizoJc"
     REFRESH_SOURCE = "FLmJqe"

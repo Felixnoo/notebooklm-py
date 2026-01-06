@@ -282,6 +282,19 @@ def handle_error(e: Exception):
     raise SystemExit(1)
 
 
+def json_output_response(data: dict) -> None:
+    """Print JSON response."""
+    console.print(json.dumps(data, indent=2, default=str))
+
+
+def json_error_response(code: str, message: str) -> None:
+    """Print JSON error and exit."""
+    console.print(
+        json.dumps({"error": True, "code": code, "message": message}, indent=2)
+    )
+    raise SystemExit(1)
+
+
 # =============================================================================
 # MAIN CLI GROUP
 # =============================================================================
@@ -451,7 +464,8 @@ def use_notebook(ctx, notebook_id):
 
 
 @cli.command("status")
-def status():
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+def status(json_output):
     """Show current context (active notebook and conversation)."""
     notebook_id = get_current_notebook()
     if notebook_id:
@@ -461,6 +475,19 @@ def status():
             is_owner = data.get("is_owner", True)
             created_at = data.get("created_at", "-")
             conversation_id = data.get("conversation_id")
+
+            if json_output:
+                json_data = {
+                    "has_context": True,
+                    "notebook": {
+                        "id": notebook_id,
+                        "title": title if title != "-" else None,
+                        "is_owner": is_owner,
+                    },
+                    "conversation_id": conversation_id,
+                }
+                json_output_response(json_data)
+                return
 
             table = Table(title="Current Context")
             table.add_column("Property", style="dim")
@@ -479,6 +506,19 @@ def status():
                 )
             console.print(table)
         except (json.JSONDecodeError, IOError):
+            if json_output:
+                json_data = {
+                    "has_context": True,
+                    "notebook": {
+                        "id": notebook_id,
+                        "title": None,
+                        "is_owner": None,
+                    },
+                    "conversation_id": None,
+                }
+                json_output_response(json_data)
+                return
+
             table = Table(title="Current Context")
             table.add_column("Property", style="dim")
             table.add_column("Value", style="cyan")
@@ -489,6 +529,15 @@ def status():
             table.add_row("Conversation", "[dim]None[/dim]")
             console.print(table)
     else:
+        if json_output:
+            json_data = {
+                "has_context": False,
+                "notebook": None,
+                "conversation_id": None,
+            }
+            json_output_response(json_data)
+            return
+
         console.print(
             "[yellow]No notebook selected. Use 'notebooklm use <id>' to set one.[/yellow]"
         )
@@ -502,8 +551,9 @@ def clear_cmd():
 
 
 @cli.command("list")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def list_notebooks_shortcut(ctx):
+def list_notebooks_shortcut(ctx, json_output):
     """List all notebooks (shortcut for 'notebook list')."""
     try:
         cookies, csrf, session_id = get_client(ctx)
@@ -515,6 +565,25 @@ def list_notebooks_shortcut(ctx):
                 return await service.list()
 
         notebooks = run_async(_list())
+
+        if json_output:
+            data = {
+                "notebooks": [
+                    {
+                        "index": i,
+                        "id": nb.id,
+                        "title": nb.title,
+                        "is_owner": nb.is_owner,
+                        "created_at": nb.created_at.isoformat()
+                        if nb.created_at
+                        else None,
+                    }
+                    for i, nb in enumerate(notebooks, 1)
+                ],
+                "count": len(notebooks),
+            }
+            json_output_response(data)
+            return
 
         table = Table(title="Notebooks")
         table.add_column("ID", style="cyan")
@@ -530,16 +599,23 @@ def list_notebooks_shortcut(ctx):
         console.print(table)
 
     except FileNotFoundError:
+        if json_output:
+            json_error_response(
+                "AUTH_REQUIRED", "Auth not found. Run 'notebooklm login' first."
+            )
         console.print("[red]Auth not found. Run 'notebooklm login' first.[/red]")
         raise SystemExit(1)
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
 @cli.command("create")
 @click.argument("title")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def create_notebook_shortcut(ctx, title):
+def create_notebook_shortcut(ctx, title, json_output):
     """Create a new notebook (shortcut for 'notebook create')."""
     try:
         cookies, csrf, session_id = get_client(ctx)
@@ -551,11 +627,27 @@ def create_notebook_shortcut(ctx, title):
                 return await service.create(title)
 
         notebook = run_async(_create())
+
+        if json_output:
+            data = {
+                "notebook": {
+                    "id": notebook.id,
+                    "title": notebook.title,
+                    "created_at": notebook.created_at.isoformat()
+                    if notebook.created_at
+                    else None,
+                }
+            }
+            json_output_response(data)
+            return
+
         console.print(
             f"[green]Created notebook:[/green] {notebook.id} - {notebook.title}"
         )
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
@@ -760,18 +852,20 @@ def notebook():
 
 
 @notebook.command("list")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def notebook_list(ctx):
+def notebook_list(ctx, json_output):
     """List all notebooks."""
-    ctx.invoke(list_notebooks_shortcut)
+    ctx.invoke(list_notebooks_shortcut, json_output=json_output)
 
 
 @notebook.command("create")
 @click.argument("title")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def notebook_create(ctx, title):
+def notebook_create(ctx, title, json_output):
     """Create a new notebook."""
-    ctx.invoke(create_notebook_shortcut, title=title)
+    ctx.invoke(create_notebook_shortcut, title=title, json_output=json_output)
 
 
 @notebook.command("delete")
@@ -1233,8 +1327,9 @@ def source():
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def source_list(ctx, notebook_id):
+def source_list(ctx, notebook_id, json_output):
     """List all sources in a notebook."""
     try:
         nb_id = require_notebook(notebook_id)
@@ -1246,9 +1341,36 @@ def source_list(ctx, notebook_id):
                 from .services.sources import SourceService
 
                 service = SourceService(client)
-                return await service.list(nb_id)
+                sources = await service.list(nb_id)
+                nb = None
+                if json_output:
+                    nb_service = NotebookService(client)
+                    nb = await nb_service.get(nb_id)
+                return sources, nb
 
-        sources = run_async(_list())
+        sources, nb = run_async(_list())
+
+        if json_output:
+            data = {
+                "notebook_id": nb_id,
+                "notebook_title": nb.title if nb else None,
+                "sources": [
+                    {
+                        "index": i,
+                        "id": src.id,
+                        "title": src.title,
+                        "type": src.source_type,
+                        "url": src.url,
+                        "created_at": src.created_at.isoformat()
+                        if src.created_at
+                        else None,
+                    }
+                    for i, src in enumerate(sources, 1)
+                ],
+                "count": len(sources),
+            }
+            json_output_response(data)
+            return
 
         table = Table(title=f"Sources in {nb_id}")
         table.add_column("ID", style="cyan")
@@ -1266,6 +1388,8 @@ def source_list(ctx, notebook_id):
         console.print(table)
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
@@ -1287,8 +1411,9 @@ def source_list(ctx, notebook_id):
 )
 @click.option("--title", help="Title for text sources")
 @click.option("--mime-type", help="MIME type for file sources")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def source_add(ctx, content, notebook_id, source_type, title, mime_type):
+def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_output):
     """Add a source to a notebook.
 
     \b
@@ -1353,12 +1478,29 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type):
                 elif detected_type == "file":
                     return await service.add_file(nb_id, content, mime_type)
 
-        with console.status(f"Adding {detected_type} source..."):
+        if not json_output:
+            with console.status(f"Adding {detected_type} source..."):
+                source = run_async(_add())
+        else:
             source = run_async(_add())
+
+        if json_output:
+            data = {
+                "source": {
+                    "id": source.id,
+                    "title": source.title,
+                    "type": source.source_type,
+                    "url": source.url,
+                }
+            }
+            json_output_response(data)
+            return
 
         console.print(f"[green]Added source:[/green] {source.id}")
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
@@ -1609,8 +1751,9 @@ def artifact():
     default="all",
     help="Filter by type",
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def artifact_list(ctx, notebook_id, artifact_type):
+def artifact_list(ctx, notebook_id, artifact_type, json_output):
     """List artifacts in a notebook."""
     try:
         nb_id = require_notebook(notebook_id)
@@ -1656,9 +1799,47 @@ def artifact_list(ctx, notebook_id, artifact_type):
                             )
                             artifacts.append(mm_artifact)
 
-                return artifacts
+                nb = None
+                if json_output:
+                    nb_service = NotebookService(client)
+                    nb = await nb_service.get(nb_id)
+                return artifacts, nb
 
-        artifacts = run_async(_list())
+        artifacts, nb = run_async(_list())
+
+        if json_output:
+
+            def _get_status_str(art):
+                if art.is_completed:
+                    return "completed"
+                elif art.is_processing:
+                    return "processing"
+                return str(art.status)
+
+            data = {
+                "notebook_id": nb_id,
+                "notebook_title": nb.title if nb else None,
+                "artifacts": [
+                    {
+                        "index": i,
+                        "id": art.id,
+                        "title": art.title,
+                        "type": get_artifact_type_display(
+                            art.artifact_type, art.variant, art.report_subtype
+                        ).split(" ", 1)[-1],
+                        "type_id": art.artifact_type,
+                        "status": _get_status_str(art),
+                        "status_id": art.status,
+                        "created_at": art.created_at.isoformat()
+                        if art.created_at
+                        else None,
+                    }
+                    for i, art in enumerate(artifacts, 1)
+                ],
+                "count": len(artifacts),
+            }
+            json_output_response(data)
+            return
 
         if not artifacts:
             console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
@@ -1690,6 +1871,8 @@ def artifact_list(ctx, notebook_id, artifact_type):
         console.print(table)
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
@@ -2014,9 +2197,17 @@ def generate():
 @click.option(
     "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
 def generate_audio(
-    ctx, description, notebook_id, audio_format, audio_length, language, wait
+    ctx,
+    description,
+    notebook_id,
+    audio_format,
+    audio_length,
+    language,
+    wait,
+    json_output,
 ):
     """Generate audio overview (podcast).
 
@@ -2056,9 +2247,10 @@ def generate_audio(
                     return None
 
                 if wait:
-                    console.print(
-                        f"[yellow]Generating audio...[/yellow] Task: {result.get('artifact_id')}"
-                    )
+                    if not json_output:
+                        console.print(
+                            f"[yellow]Generating audio...[/yellow] Task: {result.get('artifact_id')}"
+                        )
                     service = ArtifactService(client)
                     return await service.wait_for_completion(
                         nb_id, result["artifact_id"], poll_interval=10.0
@@ -2066,6 +2258,33 @@ def generate_audio(
                 return result
 
         status = run_async(_generate())
+
+        if json_output:
+            if not status:
+                json_error_response("GENERATION_FAILED", "Audio generation failed")
+            elif hasattr(status, "is_complete") and status.is_complete:
+                data = {
+                    "artifact_id": status.artifact_id
+                    if hasattr(status, "artifact_id")
+                    else None,
+                    "status": "completed",
+                    "url": status.url,
+                }
+                json_output_response(data)
+            elif hasattr(status, "is_failed") and status.is_failed:
+                json_error_response(
+                    "GENERATION_FAILED", status.error or "Audio generation failed"
+                )
+            else:
+                artifact_id = (
+                    status.get("artifact_id") if isinstance(status, dict) else None
+                )
+                data = {
+                    "artifact_id": artifact_id,
+                    "status": "pending",
+                }
+                json_output_response(data)
+            return
 
         if not status:
             console.print("[red]Audio generation failed[/red]")
@@ -2077,6 +2296,8 @@ def generate_audio(
             console.print(f"[yellow]Started:[/yellow] {status}")
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 
@@ -2116,8 +2337,11 @@ def generate_audio(
 @click.option(
     "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def generate_video(ctx, description, notebook_id, video_format, style, language, wait):
+def generate_video(
+    ctx, description, notebook_id, video_format, style, language, wait, json_output
+):
     """Generate video overview.
 
     \b
@@ -2158,9 +2382,10 @@ def generate_video(ctx, description, notebook_id, video_format, style, language,
                     return None
 
                 if wait and result.get("artifact_id"):
-                    console.print(
-                        f"[yellow]Generating video...[/yellow] Task: {result.get('artifact_id')}"
-                    )
+                    if not json_output:
+                        console.print(
+                            f"[yellow]Generating video...[/yellow] Task: {result.get('artifact_id')}"
+                        )
                     service = ArtifactService(client)
                     return await service.wait_for_completion(
                         nb_id, result["artifact_id"], poll_interval=10.0, timeout=600.0
@@ -2168,6 +2393,33 @@ def generate_video(ctx, description, notebook_id, video_format, style, language,
                 return result
 
         status = run_async(_generate())
+
+        if json_output:
+            if not status:
+                json_error_response("GENERATION_FAILED", "Video generation failed")
+            elif hasattr(status, "is_complete") and status.is_complete:
+                data = {
+                    "artifact_id": status.artifact_id
+                    if hasattr(status, "artifact_id")
+                    else None,
+                    "status": "completed",
+                    "url": status.url,
+                }
+                json_output_response(data)
+            elif hasattr(status, "is_failed") and status.is_failed:
+                json_error_response(
+                    "GENERATION_FAILED", status.error or "Video generation failed"
+                )
+            else:
+                artifact_id = (
+                    status.get("artifact_id") if isinstance(status, dict) else None
+                )
+                data = {
+                    "artifact_id": artifact_id,
+                    "status": "pending",
+                }
+                json_output_response(data)
+            return
 
         if not status:
             console.print("[red]Video generation failed[/red]")
@@ -2179,6 +2431,8 @@ def generate_video(ctx, description, notebook_id, video_format, style, language,
             console.print(f"[yellow]Started:[/yellow] {status}")
 
     except Exception as e:
+        if json_output:
+            json_error_response("ERROR", str(e))
         handle_error(e)
 
 

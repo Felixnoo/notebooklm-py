@@ -25,6 +25,14 @@ This document provides a comprehensive reference of known issues, limitations, a
 }
 ```
 
+### File Upload (Fixed in v0.1.1)
+
+**Previously:** File uploads via `add_file()` failed with HTTP 400 error, returning `None`.
+
+**Resolution:** The issue was incorrect parameter nesting in the `ADD_SOURCE_FILE` RPC call (o4cbdc). The filename was triple-nested `[[[filename]]]` instead of double-nested `[[filename]]`.
+
+**Current Behavior:** All file types (PDF, TXT, MD, DOCX) now upload correctly using the 3-step resumable upload protocol.
+
 ---
 
 ## 1. API Limitations
@@ -110,16 +118,15 @@ Download URLs for audio and video files are temporary.
 
 ---
 
-## 6. File Upload Issues
+## 6. File Upload Considerations
 
 ### Native Upload Support
-Native file uploads (via `UPLOAD_URL`) are partially implemented but inconsistent:
+Native file uploads (via `UPLOAD_URL`) now work reliably:
 - **Supported:** `.pdf`, `.txt`, `.md`, `.docx`.
-- **Issues:** Text (`.txt`) and Markdown (`.md`) uploads via the native `add-file` command often return `None` or fail to register as sources.
 - **Size Limits:** While not explicitly documented, files over 20MB or documents with more than 500,000 words may fail to process.
 
-### Resumable Uploads
-The current implementation uses simple POST uploads. Large files that require resumable multi-part uploads are not yet supported and may time out.
+### Large File Uploads
+The current implementation uses the resumable upload protocol but sends content in a single chunk. Very large files may need to be split into smaller chunks for reliability.
 
 ---
 
@@ -129,7 +136,6 @@ The current implementation uses simple POST uploads. Large files that require re
 |-------|------------------------|
 | **Rate Limiting** | Add `asyncio.sleep(5)` between intensive operations; use exponential backoff. |
 | **`GET_ARTIFACT` Failure** | Use `list_artifacts()` and filter by ID or title. |
-| **File Upload Failures** | For text/markdown, use `add_source_text()` which sends the content directly in the RPC payload. |
 | **Auth Expiration** | Run `notebooklm login` to refresh the `storage_state.json`. |
 | **Download Failures** | Ensure Playwright is installed: `pip install "notebooklm-client[browser]"`. |
 | **Artifact Not Appearing** | Poll `list_artifacts()` for up to 60 seconds after a generation call. |

@@ -126,13 +126,12 @@ f.req=[[[method_id, params_json, null, "generic"]]]&at=CSRF_TOKEN
 
 **What works in E2E:**
 - ✅ All notebook operations (list, create, rename, delete, query)
-- ✅ All source operations (add URL/text/YouTube, rename)
+- ✅ All source operations (add URL/text/YouTube/file upload, rename)
 - ✅ All download operations (audio, video, infographic, slides)
 - ✅ Some artifact operations (mind map, study guide, FAQ, data table)
 
 **What's unreliable in E2E:**
 - ❌ Artifact generation (audio, video, quiz, flashcards, infographics, slides)
-- ⚠️ File upload (text/markdown files returning None)
 
 ## Common Pitfalls
 

@@ -516,7 +516,7 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
                 json_output_response(data)
                 return
 
-            summary = guide.get("summary", "")
+            summary = guide.get("summary", "").strip()
             keywords = guide.get("keywords", [])
 
             if not summary and not keywords:

@@ -517,6 +517,29 @@ class TestSourceGuide:
             assert "Summary without keywords" in result.output
             assert "No guide available" not in result.output
 
+    def test_source_guide_keywords_only(self, runner, mock_auth):
+        """Test that keywords are displayed even when summary is empty."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Test Source", source_type="url")
+                ]
+            )
+            mock_client.sources.get_guide = AsyncMock(
+                return_value={"summary": "", "keywords": ["AI", "ML", "Data"]}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["source", "guide", "src_123", "-n", "nb_123"])
+
+            assert result.exit_code == 0
+            assert "Keywords" in result.output
+            assert "AI" in result.output
+            assert "No guide available" not in result.output
+
 
 # =============================================================================
 # SOURCE STALE TESTS

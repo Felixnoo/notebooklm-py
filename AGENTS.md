@@ -29,12 +29,11 @@ if TYPE_CHECKING:
 
 ### Async Patterns
 ```python
-# All client methods are async - use context managers
-async with NotebookLMClient(auth) as client:
-    notebooks = await client.list_notebooks()
-
-# Or factory method
-async with await NotebookLMClient.from_storage() as client: ...
+# All client methods are async - use namespaced APIs
+async with await NotebookLMClient.from_storage() as client:
+    notebooks = await client.notebooks.list()
+    await client.sources.add_url(nb_id, url)
+    result = await client.chat.ask(nb_id, question)
 ```
 
 ### Data Structures
@@ -102,7 +101,7 @@ class TestDecodeResponse:
 # Async tests
 @pytest.mark.asyncio
 async def test_list_notebooks(self, client):
-    notebooks = await client.list_notebooks()
+    notebooks = await client.notebooks.list()
     assert isinstance(notebooks, list)
 ```
 

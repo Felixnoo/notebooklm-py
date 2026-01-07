@@ -100,14 +100,21 @@ Agents should ignore files marked `Deprecated`.
 ```
 docs/
 ├── README.md              # Folder-specific rules
-├── API.md                 # User-facing API documentation
-├── EXAMPLES.md            # Usage examples
-├── reference/             # Long-lived technical reference
-│   ├── RpcProtocol.md     # RPC protocol reference
-│   ├── KnownIssues.md     # Known issues and workarounds
+├── getting-started.md     # Installation and first workflow
+├── cli-reference.md       # CLI command reference
+├── python-api.md          # Python API reference
+├── configuration.md       # Storage and settings
+├── troubleshooting.md     # Common issues and solutions
+├── examples/              # Runnable example scripts
+├── contributing/          # Contributor guides
+│   ├── architecture.md    # Code structure
+│   ├── debugging.md       # Network capture guide
+│   ├── testing.md         # Running tests
+│   └── rpc-protocol.md    # RPC protocol reference
+├── reference/
 │   └── internals/         # Reverse engineering notes
 ├── designs/               # Approved design docs (permanent)
 │   └── <feature-name>.md
 └── scratch/               # Temporary agent work (disposable)
-    └── YYYY-MM-DD-<context>.md
+    └── YYYY-MM-DD-context.md
 ```

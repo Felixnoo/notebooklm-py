@@ -208,6 +208,12 @@ class TestNotebookRename:
     def test_notebook_rename(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.rename = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -229,6 +235,12 @@ class TestNotebookShare:
     def test_notebook_share(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.share = AsyncMock(
                 return_value={"share_link": "https://notebooklm.google.com/notebook/abc123"}
             )
@@ -244,6 +256,12 @@ class TestNotebookShare:
     def test_notebook_share_no_result(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.share = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -264,6 +282,12 @@ class TestNotebookSummary:
     def test_notebook_summary(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_desc = MagicMock()
             mock_desc.summary = "This notebook contains research about AI."
             mock_desc.suggested_topics = []
@@ -281,6 +305,12 @@ class TestNotebookSummary:
     def test_notebook_summary_with_topics(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_desc = MagicMock()
             mock_desc.summary = "This is a summary."
             mock_topic = MagicMock()
@@ -300,6 +330,12 @@ class TestNotebookSummary:
     def test_notebook_summary_not_available(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.get_description = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -320,6 +356,12 @@ class TestNotebookAnalytics:
     def test_notebook_analytics(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.get_analytics = AsyncMock(
                 return_value={"views": 100, "queries": 50}
             )
@@ -335,6 +377,12 @@ class TestNotebookAnalytics:
     def test_notebook_analytics_not_available(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.get_analytics = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 

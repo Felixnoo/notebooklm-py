@@ -10,13 +10,14 @@ def notebook_option(f):
     """Add --notebook/-n option for notebook ID.
 
     The option defaults to None, allowing context-based resolution.
+    Supports partial ID matching (e.g., 'abc' matches 'abc123...').
     """
     return click.option(
         "-n",
         "--notebook",
         "notebook_id",
         default=None,
-        help="Notebook ID (uses current if not set)",
+        help="Notebook ID (uses current if not set). Supports partial IDs.",
     )(f)
 
 
@@ -40,24 +41,30 @@ def wait_option(f):
 
 
 def source_option(f):
-    """Add --source/-s option for source ID."""
+    """Add --source/-s option for source ID.
+
+    Supports partial ID matching (e.g., 'abc' matches 'abc123...').
+    """
     return click.option(
         "-s",
         "--source",
         "source_id",
         required=True,
-        help="Source ID",
+        help="Source ID. Supports partial IDs.",
     )(f)
 
 
 def artifact_option(f):
-    """Add --artifact/-a option for artifact ID."""
+    """Add --artifact/-a option for artifact ID.
+
+    Supports partial ID matching (e.g., 'abc' matches 'abc123...').
+    """
     return click.option(
         "-a",
         "--artifact",
         "artifact_id",
         required=True,
-        help="Artifact ID",
+        help="Artifact ID. Supports partial IDs.",
     )(f)
 
 

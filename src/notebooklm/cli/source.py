@@ -39,6 +39,11 @@ def source():
       delete    Delete a source
       rename    Rename a source
       refresh   Refresh a URL/Drive source
+
+    \b
+    Partial ID Support:
+      SOURCE_ID arguments support partial matching. Instead of typing the full
+      UUID, you can use a prefix (e.g., 'abc' matches 'abc123def456...').
     """
     pass
 

@@ -40,6 +40,11 @@ def artifact():
       delete    Delete an artifact
       export    Export to Google Docs/Sheets
       poll      Poll generation status
+
+    \b
+    Partial ID Support:
+      ARTIFACT_ID arguments support partial matching. Instead of typing the full
+      UUID, you can use a prefix (e.g., 'abc' matches 'abc123def456...').
     """
     pass
 
@@ -300,7 +305,7 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
     "--notebook",
     "notebook_id",
     default=None,
-    help="Notebook ID (uses current if not set)",
+    help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--title", required=True, help="Title for exported document")
 @click.option(
@@ -308,15 +313,19 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
 )
 @with_client
 def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_auth):
-    """Export artifact to Google Docs/Sheets."""
+    """Export artifact to Google Docs/Sheets.
+
+    ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            art = await client.artifacts.get(nb_id, artifact_id)
+            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            art = await client.artifacts.get(nb_id, resolved_id)
             content = str(art) if art else ""
             result = await client.artifacts.export(
-                nb_id, artifact_id, content, title, export_type
+                nb_id, resolved_id, content, title, export_type
             )
             if result:
                 console.print(f"[green]Exported to Google {export_type.title()}[/green]")

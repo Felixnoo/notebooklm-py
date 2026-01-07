@@ -77,6 +77,28 @@ These rules go in CONTRIBUTING.md:
 3. **Scratchpad Protocol** - All analysis, investigation logs, and intermediate work go in `docs/scratch/`
 4. **Consolidation First** - Before creating new docs, search for existing related docs and update them instead
 
+### Protected Sections
+
+Some sections within files are critical and must not be modified without explicit approval.
+
+**Inline markers** (source of truth):
+```markdown
+<!-- PROTECTED: Do not modify without approval -->
+## Critical Section Title
+Content that should not be changed by agents...
+<!-- END PROTECTED -->
+```
+
+For code files:
+```python
+# PROTECTED: Do not modify without approval
+class RPCMethod(Enum):
+    ...
+# END PROTECTED
+```
+
+**Rule:** Agents must never modify content between `PROTECTED` and `END PROTECTED` markers unless explicitly instructed by the user.
+
 ### Plan/Design Lifecycle
 
 1. **Design docs** (`docs/designs/`) - Document the "why" behind major decisions; kept permanently

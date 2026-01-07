@@ -29,16 +29,17 @@ CHANGELOG.md       # Release history
 **docs/ folder:**
 ```
 docs/
+├── README.md              # Folder-specific rules for documentation (NEW)
 ├── API.md                 # User-facing API documentation
 ├── EXAMPLES.md            # Usage examples
 ├── reference/             # Long-lived technical reference
-│   ├── RPC.md             # RPC protocol reference (consolidate duplicates)
-│   ├── KNOWN_ISSUES.md    # Known issues (consolidate duplicates)
+│   ├── RpcProtocol.md     # RPC protocol reference (PascalCase)
+│   ├── KnownIssues.md     # Known issues (PascalCase)
 │   └── internals/         # Reverse engineering notes (optional)
 ├── designs/               # Approved design docs (permanent)
-│   └── YYYY-MM-DD-<feature>-design.md
+│   └── <feature-name>.md  # No date prefix, gets updated
 └── scratch/               # Temporary agent work (disposable)
-    └── <any-analysis-files>.md
+    └── YYYY-MM-DD-<context>.md  # Date prefix for auto-cleanup
 ```
 
 ### 2. What to Keep vs Delete
@@ -84,22 +85,49 @@ These rules go in CONTRIBUTING.md:
 
 ### Naming Conventions
 
-- Design docs: `YYYY-MM-DD-<feature>-design.md`
-- Scratch files: Any descriptive name, no date prefix required
-- Reference docs: Simple descriptive names (e.g., `RPC.md`, not `RPC_REFERENCE.md`)
+| Type | Format | Example |
+|------|--------|---------|
+| Design docs | `<feature-name>.md` (no date, gets updated) | `authentication.md`, `cli-refactoring.md` |
+| Reference docs | `PascalCase.md` (acronyms stay caps) | `RpcProtocol.md`, `API.md` |
+| Scratch files | `YYYY-MM-DD-<context>.md` (date for auto-cleanup) | `2026-01-06-debug-auth.md` |
+
+### Status Headers
+
+All docs should include status metadata for staleness tracking:
+
+```markdown
+**Status:** Active | Deprecated
+**Last Updated:** YYYY-MM-DD
+```
+
+Agents should ignore files marked `Deprecated`.
+
+### Information Management Principles
+
+1. **Link, Don't Copy** - Agent files should reference README.md sections instead of repeating commands. Prevents drift between docs.
+
+2. **Scoped Instructions** - Put folder-specific rules in that folder's README.md:
+   - `docs/README.md` - Rules for documentation structure
+   - Root agent files - Only agent-specific behavioral instructions
+
+3. **Minimal Agent Files** - CLAUDE.md, GEMINI.md, AGENTS.md contain only:
+   - Tool/commit preferences specific to that agent
+   - Link to CONTRIBUTING.md for shared rules
+   - NO repeated project context (that's in README.md)
 
 ## Migration Plan
 
 1. Create `CONTRIBUTING.md` with human guidelines + agent rules
-2. Create `docs/reference/` and `docs/scratch/` directories
-3. Consolidate duplicate files:
-   - RPC.md + RPC_REFERENCE.md → `docs/reference/RPC.md`
-   - KNOWN_ISSUES.md + KNOWN_ISSUES_REFERENCE.md → `docs/reference/KNOWN_ISSUES.md`
-4. Move one-off root files to `docs/scratch/`:
-   - TEST_FIX_SUMMARY.md
-   - EXTRACTION_VERIFICATION.md
-   - E2E_TEST_ANALYSIS.md
-5. Move reverse engineering notes to `docs/reference/internals/`
-6. Rename `docs/plans/` to `docs/designs/`
-7. Add reference to CONTRIBUTING.md in each agent file
-8. Trim agent files to behavioral instructions only (move shared context to README.md)
+2. Create `docs/README.md` with folder-specific documentation rules
+3. Create `docs/reference/` and `docs/scratch/` directories
+4. Consolidate and rename duplicate files (using PascalCase):
+   - RPC.md + RPC_REFERENCE.md → `docs/reference/RpcProtocol.md`
+   - KNOWN_ISSUES.md + KNOWN_ISSUES_REFERENCE.md → `docs/reference/KnownIssues.md`
+5. Move one-off root files to `docs/scratch/` (with date prefix):
+   - TEST_FIX_SUMMARY.md → `docs/scratch/2026-01-XX-test-fix-summary.md`
+   - EXTRACTION_VERIFICATION.md → `docs/scratch/2026-01-XX-extraction-verification.md`
+   - E2E_TEST_ANALYSIS.md → `docs/scratch/2026-01-XX-e2e-test-analysis.md`
+6. Move reverse engineering notes to `docs/reference/internals/`
+7. Rename `docs/plans/` to `docs/designs/` and remove date prefixes from filenames
+8. Add reference to CONTRIBUTING.md in each agent file
+9. Trim agent files to behavioral instructions only (use "Link, Don't Copy")

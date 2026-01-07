@@ -6,7 +6,8 @@ Commands:
     rename      Rename an artifact
     delete      Delete an artifact
     export      Export to Google Docs/Sheets
-    poll        Poll generation status
+    poll        Poll generation status (single check)
+    wait        Wait for generation to complete (blocking)
     suggestions Get AI-suggested report topics
 """
 
@@ -39,7 +40,8 @@ def artifact():
       rename    Rename an artifact
       delete    Delete an artifact
       export    Export to Google Docs/Sheets
-      poll      Poll generation status
+      poll      Poll generation status (single check)
+      wait      Wait for generation to complete (blocking)
 
     \b
     Partial ID Support:
@@ -355,6 +357,86 @@ def artifact_poll(ctx, task_id, notebook_id, client_auth):
             status = await client.artifacts.poll_status(nb_id, task_id)
             console.print("[bold cyan]Task Status:[/bold cyan]")
             console.print(status)
+
+    return _run()
+
+
+@artifact.command("wait")
+@click.argument("artifact_id")
+@click.option(
+    "-n",
+    "--notebook",
+    "notebook_id",
+    default=None,
+    help="Notebook ID (uses current if not set)",
+)
+@click.option(
+    "--timeout",
+    default=300,
+    type=int,
+    help="Maximum seconds to wait (default: 300)",
+)
+@click.option(
+    "--interval",
+    default=2,
+    type=int,
+    help="Seconds between status checks (default: 2)",
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output, client_auth):
+    """Wait for artifact generation to complete.
+
+    Blocks until the artifact is completed, failed, or timeout is reached.
+    Useful for scripts and LLM agents that need to wait for generation.
+
+    \b
+    Examples:
+      notebooklm artifact wait abc123 -n nb_456
+      notebooklm artifact wait abc123 --timeout 600 --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+
+            try:
+                status = await client.artifacts.wait_for_completion(
+                    nb_id, resolved_id,
+                    poll_interval=float(interval),
+                    timeout=float(timeout),
+                )
+
+                if json_output:
+                    data = {
+                        "artifact_id": resolved_id,
+                        "status": status.status,
+                        "url": status.url,
+                        "error": status.error,
+                    }
+                    json_output_response(data)
+                else:
+                    if status.status == "completed":
+                        console.print(f"[green]✓ Artifact completed:[/green] {resolved_id}")
+                        if status.url:
+                            console.print(f"[dim]URL:[/dim] {status.url}")
+                    elif status.error:
+                        console.print(f"[red]✗ Generation failed:[/red] {status.error}")
+                        raise SystemExit(1)
+                    else:
+                        console.print(f"[yellow]Status:[/yellow] {status.status}")
+
+            except TimeoutError:
+                if json_output:
+                    json_output_response({
+                        "artifact_id": resolved_id,
+                        "status": "timeout",
+                        "error": f"Timed out after {timeout} seconds",
+                    })
+                else:
+                    console.print(f"[red]✗ Timeout after {timeout}s[/red]")
+                raise SystemExit(1)
 
     return _run()
 

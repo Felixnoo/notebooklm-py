@@ -367,6 +367,144 @@ class TestArtifactPoll:
 
 
 # =============================================================================
+# ARTIFACT WAIT TESTS
+# =============================================================================
+
+
+class TestArtifactWait:
+    def test_artifact_wait_completed(self, runner, mock_auth):
+        """Test waiting for artifact that completes successfully."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test", artifact_type=1, status=3)
+                ]
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                return_value=MagicMock(
+                    status="completed",
+                    url="https://example.com/audio.mp3",
+                    error=None
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "wait", "art_123", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0
+            assert "Artifact completed" in result.output
+
+    def test_artifact_wait_failed(self, runner, mock_auth):
+        """Test waiting for artifact that fails generation."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
+                ]
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                return_value=MagicMock(
+                    status="failed",
+                    url=None,
+                    error="Generation failed due to content policy"
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "wait", "art_123", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 1
+            assert "Generation failed" in result.output
+
+    def test_artifact_wait_timeout(self, runner, mock_auth):
+        """Test waiting for artifact that times out."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
+                ]
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                side_effect=TimeoutError("Timed out")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "wait", "art_123", "-n", "nb_123", "--timeout", "5"]
+                )
+
+            assert result.exit_code == 1
+            assert "Timeout" in result.output
+
+    def test_artifact_wait_json_output(self, runner, mock_auth):
+        """Test waiting with JSON output."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test", artifact_type=1, status=3)
+                ]
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                return_value=MagicMock(
+                    status="completed",
+                    url="https://example.com/audio.mp3",
+                    error=None
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "wait", "art_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["status"] == "completed"
+            assert data["artifact_id"] == "art_123"
+
+    def test_artifact_wait_timeout_json_output(self, runner, mock_auth):
+        """Test timeout with JSON output."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
+                ]
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(
+                side_effect=TimeoutError("Timed out")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "wait", "art_123", "-n", "nb_123", "--json", "--timeout", "5"]
+                )
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["status"] == "timeout"
+
+
+# =============================================================================
 # ARTIFACT SUGGESTIONS TESTS
 # =============================================================================
 
@@ -435,8 +573,16 @@ class TestArtifactCommandsExist:
         assert "list" in result.output
         assert "get" in result.output
         assert "delete" in result.output
+        assert "wait" in result.output
 
     def test_artifact_list_command_exists(self, runner):
         result = runner.invoke(cli, ["artifact", "list", "--help"])
         assert result.exit_code == 0
         assert "--type" in result.output
+
+    def test_artifact_wait_command_exists(self, runner):
+        result = runner.invoke(cli, ["artifact", "wait", "--help"])
+        assert result.exit_code == 0
+        assert "--timeout" in result.output
+        assert "--interval" in result.output
+        assert "--json" in result.output

@@ -36,6 +36,7 @@ If commands fail with authentication errors, re-run `notebooklm login`.
 - `notebooklm list` - list notebooks
 - `notebooklm source list` - list sources
 - `notebooklm artifact list` - list artifacts
+- `notebooklm artifact wait` - wait for completion (in subagent context)
 - `notebooklm use <id>` - set context
 - `notebooklm create` - create notebook
 - `notebooklm ask "..."` - chat queries
@@ -45,6 +46,7 @@ If commands fail with authentication errors, re-run `notebooklm login`.
 - `notebooklm delete` - destructive
 - `notebooklm generate *` - long-running, may fail
 - `notebooklm download *` - writes to filesystem
+- `notebooklm artifact wait` - long-running (when in main conversation)
 
 ## Quick Reference
 
@@ -64,6 +66,7 @@ If commands fail with authentication errors, re-run `notebooklm login`.
 | Generate video | `notebooklm generate video "instructions"` |
 | Generate quiz | `notebooklm generate quiz` |
 | Check artifact status | `notebooklm artifact list` |
+| Wait for completion | `notebooklm artifact wait <artifact_id>` |
 | Download audio | `notebooklm download audio ./output.mp3` |
 | Download video | `notebooklm download video ./output.mp4` |
 | Delete notebook | `notebooklm notebook delete <id>` |
@@ -86,15 +89,32 @@ If commands fail with authentication errors, re-run `notebooklm login`.
 
 ## Common Workflows
 
-### Research to Podcast
+### Research to Podcast (Interactive)
 **Time:** 5-10 minutes total
 
 1. `notebooklm create "Research: [topic]"`
 2. `notebooklm source add` for each URL/document
 3. `notebooklm generate audio "Focus on [specific angle]"` (confirm when asked)
-4. Note the task ID returned
+4. Note the artifact ID returned
 5. Check `notebooklm artifact list` later for status
 6. `notebooklm download audio ./podcast.mp3` when complete (confirm when asked)
+
+### Research to Podcast (Automated with Subagent)
+**Time:** 5-10 minutes, but continues in background
+
+When user wants full automation (generate and download when ready):
+
+1. Create notebook and add sources as usual
+2. Run `notebooklm generate audio "..."` → returns artifact_id
+3. **Spawn a subagent** to wait and download:
+   ```bash
+   # Subagent runs:
+   notebooklm artifact wait <artifact_id> --timeout 600
+   notebooklm download audio ./podcast.mp3 -a <artifact_id>
+   ```
+4. Main conversation can continue while subagent waits
+
+**Benefits:** Non-blocking, user can do other work, automatic download on completion
 
 ### Document Analysis
 **Time:** 1-2 minutes
@@ -128,9 +148,9 @@ If commands fail with authentication errors, re-run `notebooklm login`.
 - "Starting audio generation... (task ID: abc123)"
 
 **Fire-and-forget for long operations:**
-- Start generation, return task ID immediately
-- Do NOT poll or wait - generation takes 2-5 minutes
-- User checks status manually when ready
+- Start generation, return artifact ID immediately
+- Do NOT poll or wait in main conversation - generation takes 2-5 minutes
+- User checks status manually, OR use subagent with `artifact wait`
 
 **JSON output:** Use `--json` flag for machine-readable output:
 ```bash

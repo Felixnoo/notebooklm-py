@@ -1,8 +1,11 @@
 """Decode RPC responses from NotebookLM batchexecute API."""
 
 import json
+import logging
 import re
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class RPCError(Exception):
@@ -103,7 +106,14 @@ def parse_chunked_response(response: str) -> list[Any]:
 def collect_rpc_ids(chunks: list[Any]) -> list[str]:
     """Collect all RPC IDs found in response chunks.
 
+    Collects IDs from both successful (wrb.fr) and error (er) responses.
     Useful for debugging when expected RPC ID is not found.
+
+    Args:
+        chunks: Parsed response chunks from parse_chunked_response().
+
+    Returns:
+        List of RPC method IDs found in the response.
     """
     found_ids = []
     for chunk in chunks:
@@ -181,10 +191,16 @@ def decode_response(
     found_ids = collect_rpc_ids(chunks)
 
     if debug:
-        print(f"DEBUG: Looking for RPC ID: {rpc_id}")
-        print(f"DEBUG: Found RPC IDs in response: {found_ids}")
+        logger.debug(f"Looking for RPC ID: {rpc_id}")
+        logger.debug(f"Found RPC IDs in response: {found_ids}")
 
-    result = extract_rpc_result(chunks, rpc_id)
+    try:
+        result = extract_rpc_result(chunks, rpc_id)
+    except RPCError as e:
+        # Add found_ids context to errors from extract_rpc_result
+        if not e.found_ids:
+            e.found_ids = found_ids
+        raise
 
     if result is None and not allow_null:
         if found_ids and rpc_id not in found_ids:

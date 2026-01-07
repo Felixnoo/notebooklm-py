@@ -7,6 +7,7 @@ from notebooklm.rpc.decoder import (
     strip_anti_xssi,
     parse_chunked_response,
     extract_rpc_result,
+    collect_rpc_ids,
     decode_response,
     RPCError,
 )
@@ -196,3 +197,135 @@ class TestDecodeResponse:
         result = decode_response(raw_response, "wXbhsf")
 
         assert result["notebooks"][0]["id"] == "nb1"
+
+    def test_decode_with_debug_logs(self, caplog):
+        """Test decode with debug=True logs RPC IDs."""
+        import logging
+
+        inner_data = json.dumps([["data"]])
+        chunk = json.dumps(["wrb.fr", "wXbhsf", inner_data, None, None])
+        raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        with caplog.at_level(logging.DEBUG):
+            result = decode_response(raw_response, "wXbhsf", debug=True)
+
+        assert result == [["data"]]
+        assert "Looking for RPC ID: wXbhsf" in caplog.text
+        assert "Found RPC IDs in response: ['wXbhsf']" in caplog.text
+
+    def test_decode_missing_id_includes_found_ids_in_error(self):
+        """Test error includes found_ids when RPC ID not found."""
+        inner_data = json.dumps([])
+        chunk = json.dumps(["wrb.fr", "NewMethodId", inner_data, None, None])
+        raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw_response, "OldMethodId")
+
+        assert exc_info.value.found_ids == ["NewMethodId"]
+        assert "NewMethodId" in str(exc_info.value)
+        assert "may have changed" in str(exc_info.value)
+
+    def test_decode_error_response_includes_found_ids(self):
+        """Test error response includes found_ids context."""
+        chunk = json.dumps(["er", "wXbhsf", "Auth failed", None])
+        raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw_response, "wXbhsf")
+
+        assert exc_info.value.found_ids == ["wXbhsf"]
+
+
+class TestCollectRpcIds:
+    def test_collects_single_id(self):
+        """Test collecting single RPC ID from chunk."""
+        inner_data = json.dumps([])
+        chunks = [["wrb.fr", "TestId", inner_data, None, None]]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == ["TestId"]
+
+    def test_collects_multiple_ids(self):
+        """Test collecting multiple RPC IDs from chunks."""
+        chunk1 = ["wrb.fr", "Id1", json.dumps([]), None, None]
+        chunk2 = ["wrb.fr", "Id2", json.dumps([]), None, None]
+        chunks = [chunk1, chunk2]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == ["Id1", "Id2"]
+
+    def test_collects_error_ids(self):
+        """Test collecting IDs from error chunks."""
+        chunks = [["er", "ErrorId", "Error message", None]]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == ["ErrorId"]
+
+    def test_collects_both_success_and_error_ids(self):
+        """Test collecting both success and error IDs."""
+        chunks = [
+            ["wrb.fr", "SuccessId", json.dumps([]), None, None],
+            ["er", "ErrorId", "Error", None],
+        ]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == ["SuccessId", "ErrorId"]
+
+    def test_empty_chunks(self):
+        """Test empty chunks returns empty list."""
+        assert collect_rpc_ids([]) == []
+
+    def test_ignores_non_list_chunks(self):
+        """Test non-list chunks are ignored."""
+        chunks = ["string", 123, None, {"dict": True}]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == []
+
+    def test_ignores_malformed_chunks(self):
+        """Test malformed chunks are ignored."""
+        chunks = [
+            ["wrb.fr"],  # Missing ID
+            ["wrb.fr", 123],  # Non-string ID
+            [],  # Empty
+        ]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == []
+
+    def test_handles_nested_chunks(self):
+        """Test handles nested chunk structure."""
+        inner_chunk = ["wrb.fr", "NestedId", json.dumps([]), None, None]
+        chunks = [[inner_chunk]]
+
+        ids = collect_rpc_ids(chunks)
+
+        assert ids == ["NestedId"]
+
+
+class TestRPCError:
+    def test_found_ids_stored(self):
+        """Test found_ids is stored in exception."""
+        error = RPCError("message", rpc_id="Id1", found_ids=["Id2", "Id3"])
+
+        assert error.found_ids == ["Id2", "Id3"]
+        assert error.rpc_id == "Id1"
+
+    def test_found_ids_defaults_to_empty_list(self):
+        """Test found_ids defaults to empty list when not provided."""
+        error = RPCError("message")
+
+        assert error.found_ids == []
+
+    def test_found_ids_none_becomes_empty_list(self):
+        """Test found_ids=None becomes empty list."""
+        error = RPCError("message", found_ids=None)
+
+        assert error.found_ids == []

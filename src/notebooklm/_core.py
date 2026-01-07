@@ -1,5 +1,6 @@
 """Core infrastructure for NotebookLM API client."""
 
+import logging
 import os
 import httpx
 from collections import OrderedDict
@@ -8,6 +9,13 @@ from urllib.parse import urlencode
 
 # Enable RPC debug output via environment variable
 DEBUG_RPC = os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes")
+
+# Configure logging for RPC debug mode
+if DEBUG_RPC:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(levelname)s: %(message)s",
+    )
 
 from .auth import AuthTokens
 from .rpc import (

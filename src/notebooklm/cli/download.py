@@ -105,10 +105,10 @@ async def _download_artifacts_generic(
         async with NotebookLMClient(auth) as client:
             # Setup download method dispatch
             download_methods = {
-                "audio": client.download_audio,
-                "video": client.download_video,
-                "infographic": client.download_infographic,
-                "slide-deck": client.download_slide_deck,
+                "audio": client.artifacts.download_audio,
+                "video": client.artifacts.download_video,
+                "infographic": client.artifacts.download_infographic,
+                "slide-deck": client.artifacts.download_slide_deck,
             }
             download_fn = download_methods.get(artifact_type_name)
             if not download_fn:

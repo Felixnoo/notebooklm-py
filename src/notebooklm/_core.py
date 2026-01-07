@@ -67,6 +67,19 @@ class ClientCore:
         """Check if the HTTP client is open."""
         return self._http_client is not None
 
+    def update_auth_headers(self) -> None:
+        """Update HTTP client headers with current auth tokens.
+
+        Call this after modifying auth tokens (e.g., after refresh_auth())
+        to ensure the HTTP client uses the updated credentials.
+
+        Raises:
+            RuntimeError: If client is not initialized.
+        """
+        if not self._http_client:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
+        self._http_client.headers["Cookie"] = self.auth.cookie_header
+
     def _build_url(self, rpc_method: RPCMethod, source_path: str = "/") -> str:
         """Build the batchexecute URL for an RPC call.
 

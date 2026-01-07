@@ -314,7 +314,7 @@ If you're stuck:
 
 1. Check existing implementations in `_*.py` files
 2. Look at test files for expected structures
-3. Compare with discovery docs in `docs/reference/internals/`
+3. Compare with RPC reference in `docs/reference/internals/rpc-ui-reference.md`
 4. Open an issue with:
    - What you're trying to do
    - Captured request/response (sanitized)

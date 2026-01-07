@@ -65,11 +65,11 @@ async def main():
                 results["failed"].append(f"URL: {url} - {e}")
                 print(f"  - Failed: {url}")
 
-        # 3. Import YouTube videos
+        # 3. Import YouTube videos (add_url auto-detects YouTube)
         print("\nImporting YouTube videos...")
         for url in SOURCES["youtube"]:
             try:
-                source = await client.sources.add_youtube(nb.id, url)
+                source = await client.sources.add_url(nb.id, url)
                 results["success"].append(f"YouTube: {source.title}")
                 print(f"  + {source.title}")
             except Exception as e:
@@ -81,7 +81,7 @@ async def main():
         for item in SOURCES["text"]:
             try:
                 source = await client.sources.add_text(
-                    nb.id, item["content"], title=item["title"]
+                    nb.id, item["title"], item["content"]
                 )
                 results["success"].append(f"Text: {source.title}")
                 print(f"  + {source.title}")

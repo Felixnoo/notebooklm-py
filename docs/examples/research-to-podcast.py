@@ -31,15 +31,15 @@ async def main(topic: str):
 
         # 2. Start deep research
         print("Starting deep research (this may take a while)...")
-        research = await client.research.start_deep(nb.id, topic, "web")
-        task_id = research.get("task_id")
+        research = await client.research.start(nb.id, topic, source="web", mode="deep")
+        task_id = research.get("task_id") if research else None
         print(f"  Task ID: {task_id}\n")
 
         # 3. Poll for completion
         print("Waiting for research to complete...")
         max_polls = 30
         for i in range(max_polls):
-            status = await client.research.poll_status(nb.id)
+            status = await client.research.poll(nb.id)
             state = status.get("status", "unknown")
             print(f"  Poll {i+1}/{max_polls}: {state}")
 

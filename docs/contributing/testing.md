@@ -3,20 +3,83 @@
 **Status:** Active
 **Last Updated:** 2026-01-08
 
+## Prerequisites
+
+Before running ANY E2E tests, you must complete this setup:
+
+### 1. Install Dependencies
+
+```bash
+# Using uv (recommended)
+uv pip install -e ".[dev]"
+
+# Or using pip
+pip install -e ".[dev]"
+```
+
+### 2. Authenticate with NotebookLM
+
+```bash
+notebooklm login
+```
+
+This opens a browser, logs into your Google account, and stores cookies in `~/.notebooklm/storage.json`.
+
+Verify with:
+```bash
+notebooklm status
+```
+
+### 3. Create Your Test Notebook (REQUIRED)
+
+**You MUST create a personal test notebook** with content for E2E tests to work. The golden notebook is read-only and insufficient for most tests.
+
+1. Go to [NotebookLM](https://notebooklm.google.com)
+2. Create a new notebook (e.g., "E2E Test Notebook")
+3. Add multiple sources:
+   - At least one text/paste source
+   - At least one URL source
+   - Optionally: PDF, YouTube video
+4. Generate some artifacts:
+   - At least one audio overview
+   - At least one quiz or flashcard set
+5. Copy the notebook ID from the URL: `notebooklm.google.com/notebook/YOUR_NOTEBOOK_ID`
+6. Set the environment variable:
+
+```bash
+export NOTEBOOKLM_TEST_NOTEBOOK_ID="your-notebook-id-here"
+```
+
+Add this to your shell profile (`.bashrc`, `.zshrc`) for persistence.
+
+### 4. Verify Setup
+
+```bash
+# Should pass - unit tests don't need auth
+pytest tests/unit/
+
+# Should pass - uses your test notebook
+pytest tests/e2e -m "e2e and golden" -v
+```
+
+If tests skip with "no auth stored" or fail with permission errors, your setup is incomplete.
+
+---
+
 ## Quick Reference
 
 ```bash
-# Run unit + integration tests (default)
+# Run unit + integration tests (default, no auth needed)
 pytest
 
-# Run E2E tests (requires: notebooklm login)
+# Run E2E tests (requires setup above)
 pytest tests/e2e -m e2e
 
 # Run specific marker combinations
-pytest tests/e2e -m "e2e and not slow"      # Quick E2E validation
-pytest tests/e2e -m "e2e and golden"        # Read-only tests only
-pytest tests/e2e -m "e2e and not exhaustive" # Skip variant tests
-pytest tests/e2e -m "e2e and exhaustive"    # Run ALL variant tests (high quota)
+pytest tests/e2e -m "e2e and not slow"      # Quick E2E validation (~5 min)
+pytest tests/e2e -m "e2e and golden"        # Read-only tests only (~2 min)
+pytest tests/e2e -m "e2e and not exhaustive" # Skip variant tests (~30 min)
+pytest tests/e2e -m "e2e and exhaustive"    # ALL variant tests (~2 hours, high quota)
 ```
 
 ## Test Structure
@@ -51,11 +114,13 @@ tests/
 | Add/delete sources or notes | `temp_notebook` | Isolated, auto-cleanup |
 | Generate audio/video/quiz | `generation_notebook` | Writable, has content, session-scoped |
 
-### `test_notebook_id` (Golden Notebook)
+### `test_notebook_id` (Your Test Notebook)
 
-Google's shared demo notebook: `19bde485-a9c1-4809-8884-e872b2b67b44`
+Returns `NOTEBOOKLM_TEST_NOTEBOOK_ID` env var, or falls back to the golden notebook.
 
-Pre-populated with sources and artifacts. You don't own it, so you can only read.
+**You should set this to YOUR notebook** (see Prerequisites above). Your notebook must have:
+- Multiple sources (text, URL, etc.)
+- Pre-generated artifacts (audio, quiz, etc.)
 
 ```python
 @pytest.mark.golden
@@ -63,6 +128,8 @@ async def test_list_artifacts(self, client, test_notebook_id):
     artifacts = await client.artifacts.list(test_notebook_id)
     assert isinstance(artifacts, list)
 ```
+
+**Golden notebook fallback:** `19bde485-a9c1-4809-8884-e872b2b67b44` - Google's shared demo notebook. Read-only, useful for CI or quick validation, but you can't generate artifacts on it.
 
 ### `temp_notebook`
 
@@ -166,22 +233,6 @@ async def generation_notebook(auth_tokens) -> Notebook:
     """Session notebook with content for generation tests"""
 ```
 
-### Cleanup Helpers
-
-```python
-# Collector fixtures - append IDs to track for cleanup
-created_notebooks: list[str]
-created_sources: list[str]
-created_artifacts: list[str]
-
-# Cleanup fixtures - delete tracked items after test
-cleanup_notebooks
-cleanup_sources
-cleanup_artifacts
-```
-
-**Important:** These cleanup fixtures are hardcoded to use `test_notebook_id`. Do NOT use them with `generation_notebook` or `temp_notebook` - those fixtures handle their own cleanup.
-
 ### Decorators
 
 ```python
@@ -252,3 +303,41 @@ class TestNewArtifact:
 ```
 
 Note: Generation tests only need `client` and `generation_notebook`. Cleanup is handled automatically when the session-scoped notebook is deleted at session end.
+
+## Troubleshooting
+
+### Tests skip with "no auth stored"
+
+Run `notebooklm login` and complete browser authentication.
+
+### Tests fail with permission errors
+
+Your `NOTEBOOKLM_TEST_NOTEBOOK_ID` may be invalid or you don't own it. Verify:
+```bash
+echo $NOTEBOOKLM_TEST_NOTEBOOK_ID
+notebooklm list  # Should show your notebooks
+```
+
+### Tests hang or timeout
+
+- **Generation tests:** Can take 5-15 minutes for audio/video. This is normal.
+- **Rate limiting:** NotebookLM has undocumented rate limits. Add delays between test runs.
+- **CSRF token expired:** Run `notebooklm login` again.
+
+### "CSRF token invalid" or 403 errors
+
+Your session expired. Re-authenticate:
+```bash
+notebooklm login
+```
+
+### Golden notebook tests fail
+
+The golden notebook (`19bde485-a9c1-4809-8884-e872b2b67b44`) may be unavailable or changed. Set your own:
+```bash
+export NOTEBOOKLM_TEST_NOTEBOOK_ID="your-notebook-id"
+```
+
+### Too many artifacts accumulating
+
+Generation tests create artifacts in `generation_notebook` (deleted at session end) and `temp_notebook` (deleted per test). If you interrupt tests, orphaned notebooks may remain. Clean up manually in the NotebookLM UI.

@@ -1,10 +1,12 @@
 """Shared fixtures for integration tests."""
 
 import json
+from typing import Union
 
 import pytest
 
 from notebooklm.auth import AuthTokens
+from notebooklm.rpc import RPCMethod
 
 
 @pytest.fixture
@@ -25,11 +27,18 @@ def auth_tokens():
 
 @pytest.fixture
 def build_rpc_response():
-    """Factory for building RPC responses."""
+    """Factory for building RPC responses.
 
-    def _build(rpc_id: str, data) -> str:
+    Args:
+        rpc_id: Either an RPCMethod enum or string RPC ID.
+        data: The response data to encode.
+    """
+
+    def _build(rpc_id: Union[RPCMethod, str], data) -> str:
+        # Convert RPCMethod to string value if needed
+        rpc_id_str = rpc_id.value if isinstance(rpc_id, RPCMethod) else rpc_id
         inner = json.dumps(data)
-        chunk = json.dumps(["wrb.fr", rpc_id, inner, None, None])
+        chunk = json.dumps(["wrb.fr", rpc_id_str, inner, None, None])
         return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
     return _build
@@ -60,5 +69,6 @@ def mock_list_notebooks_response():
             ]
         ]
     )
-    chunk = json.dumps([["wrb.fr", "wXbhsf", inner_data, None, None]])
+    rpc_id = RPCMethod.LIST_NOTEBOOKS.value
+    chunk = json.dumps([["wrb.fr", rpc_id, inner_data, None, None]])
     return f")]}}'\n{len(chunk)}\n{chunk}\n"

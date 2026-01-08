@@ -73,12 +73,13 @@ class NotebookLMClient:
         self._core = ClientCore(auth, timeout=timeout)
 
         # Initialize sub-client APIs
+        # Note: notes must be initialized before artifacts (artifacts uses notes API)
         self.notebooks = NotebooksAPI(self._core)
         self.sources = SourcesAPI(self._core)
-        self.artifacts = ArtifactsAPI(self._core)
+        self.notes = NotesAPI(self._core)
+        self.artifacts = ArtifactsAPI(self._core, notes_api=self.notes)
         self.chat = ChatAPI(self._core)
         self.research = ResearchAPI(self._core)
-        self.notes = NotesAPI(self._core)
 
     @property
     def auth(self) -> AuthTokens:

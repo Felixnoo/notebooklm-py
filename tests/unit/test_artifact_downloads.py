@@ -21,10 +21,12 @@ def auth_tokens():
 
 @pytest.fixture
 def mock_artifacts_api():
-    """Create an ArtifactsAPI with mocked core."""
+    """Create an ArtifactsAPI with mocked core and notes API."""
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
-    api = ArtifactsAPI(mock_core)
+    mock_notes = MagicMock()
+    mock_notes.list_mind_maps = AsyncMock(return_value=[])
+    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
     return api, mock_core
 
 

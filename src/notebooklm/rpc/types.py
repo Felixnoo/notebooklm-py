@@ -61,7 +61,7 @@ class RPCMethod(str, Enum):
     ACT_ON_SOURCES = "yyryJe"
     GENERATE_MIND_MAP = "yyryJe"
     CREATE_NOTE = "CYK0Xb"
-    GET_NOTES = "cFji9"
+    GET_NOTES_AND_MIND_MAPS = "cFji9"  # Returns both notes and mind maps
 
     # Note operations
     UPDATE_NOTE = "cYAfTb"

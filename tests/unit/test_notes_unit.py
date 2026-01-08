@@ -22,6 +22,97 @@ def notes_api(mock_core):
 
 
 # =============================================================================
+# _is_deleted() tests
+# =============================================================================
+
+
+class TestIsDeleted:
+    """Tests for the _is_deleted private helper."""
+
+    def test_is_deleted_standard_deleted_item(self, notes_api):
+        """Test detecting standard deleted item: ['id', None, 2]."""
+        item = ["note_123", None, 2]
+        assert notes_api._is_deleted(item) is True
+
+    def test_is_deleted_with_extra_elements(self, notes_api):
+        """Test deleted item with additional elements."""
+        item = ["note_123", None, 2, "extra", "data"]
+        assert notes_api._is_deleted(item) is True
+
+    def test_is_deleted_active_note_string_content(self, notes_api):
+        """Test active note with string content is not deleted."""
+        item = ["note_123", "This is content"]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_active_note_nested_format(self, notes_api):
+        """Test active note with nested format is not deleted."""
+        item = ["note_123", ["note_123", "Content", None, None, "Title"], 1]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_status_not_2(self, notes_api):
+        """Test item with None content but status != 2."""
+        item = ["note_123", None, 1]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_status_zero(self, notes_api):
+        """Test item with None content and status 0."""
+        item = ["note_123", None, 0]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_content_not_none(self, notes_api):
+        """Test item with content and status 2 is not deleted."""
+        # The actual deleted pattern requires item[1] to be None
+        item = ["note_123", "content", 2]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_empty_list(self, notes_api):
+        """Test empty list is not deleted."""
+        item = []
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_single_element(self, notes_api):
+        """Test single element list is not deleted."""
+        item = ["note_123"]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_two_elements(self, notes_api):
+        """Test two element list is not deleted (less than 3)."""
+        item = ["note_123", None]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_non_list_string(self, notes_api):
+        """Test string input is not deleted."""
+        item = "not_a_list"
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_non_list_none(self, notes_api):
+        """Test None input is not deleted."""
+        item = None
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_non_list_dict(self, notes_api):
+        """Test dict input is not deleted."""
+        item = {"id": "note_123", "content": None, "status": 2}
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_nested_content_with_status_2(self, notes_api):
+        """Test nested content format with status 2 is not deleted."""
+        # Nested content at [1] means it's not None, so not deleted
+        item = ["note_123", ["note_123", "content"], 2]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_empty_string_content(self, notes_api):
+        """Test empty string content is not considered deleted."""
+        item = ["note_123", "", 2]
+        assert notes_api._is_deleted(item) is False
+
+    def test_is_deleted_empty_list_content(self, notes_api):
+        """Test empty list content is not considered deleted."""
+        item = ["note_123", [], 2]
+        assert notes_api._is_deleted(item) is False
+
+
+# =============================================================================
 # _extract_content() tests
 # =============================================================================
 

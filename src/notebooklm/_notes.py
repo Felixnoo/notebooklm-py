@@ -40,8 +40,9 @@ class NotesAPI:
     async def list(self, notebook_id: str) -> List[Note]:
         """List all text notes in the notebook.
 
-        This excludes mind maps which are stored in the same internal structure
-        but represent a different type of content.
+        This excludes:
+        - Mind maps (stored in same structure but contain JSON with 'children'/'nodes')
+        - Deleted notes (status=2, content cleared but ID persists)
 
         Args:
             notebook_id: The notebook ID.
@@ -53,6 +54,10 @@ class NotesAPI:
         notes = []
 
         for item in all_items:
+            # Skip deleted items (status=2): ['id', None, 2]
+            if self._is_deleted(item):
+                continue
+
             content = self._extract_content(item)
             is_mind_map = content and (
                 '"children":' in content or '"nodes":' in content
@@ -174,6 +179,11 @@ class NotesAPI:
         Mind maps are stored in the same internal structure as notes but
         contain JSON data with 'children' or 'nodes' keys.
 
+        Note: For most use cases, prefer `client.artifacts.list()` which returns
+        mind maps as Artifact objects alongside other AI-generated content.
+
+        This excludes deleted mind maps (status=2).
+
         Args:
             notebook_id: The notebook ID.
 
@@ -184,6 +194,10 @@ class NotesAPI:
         mind_maps = []
 
         for item in all_items:
+            # Skip deleted items (status=2): ['id', None, 2]
+            if self._is_deleted(item):
+                continue
+
             content = self._extract_content(item)
             if content and ('"children":' in content or '"nodes":' in content):
                 mind_maps.append(item)
@@ -217,7 +231,7 @@ class NotesAPI:
         """Fetch all notes and mind maps from the API."""
         params = [notebook_id]
         result = await self._core.rpc_call(
-            RPCMethod.GET_NOTES,
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
@@ -239,6 +253,22 @@ class NotesAPI:
                     valid_notes.append(item)
             return valid_notes
         return []
+
+    def _is_deleted(self, item: List[Any]) -> bool:
+        """Check if a note/mind map item is deleted (status=2).
+
+        Deleted items have structure: ['id', None, 2]
+        The content at position [1] is None and status at [2] is 2.
+
+        Args:
+            item: Raw note/mind map data.
+
+        Returns:
+            True if the item is deleted (soft-deleted with status=2).
+        """
+        if not isinstance(item, list) or len(item) < 3:
+            return False
+        return item[1] is None and item[2] == 2
 
     def _extract_content(self, item: List[Any]) -> Optional[str]:
         """Extract content string from note/mind map item."""

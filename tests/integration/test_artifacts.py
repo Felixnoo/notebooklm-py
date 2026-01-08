@@ -4,7 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm.rpc import AudioFormat, AudioLength, VideoFormat, VideoStyle, RPCError
+from notebooklm.rpc import AudioFormat, AudioLength, VideoFormat, VideoStyle, RPCError, RPCMethod
 
 
 class TestStudioContent:
@@ -16,7 +16,7 @@ class TestStudioContent:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -31,7 +31,7 @@ class TestStudioContent:
         httpx_mock.add_response(content=notebook_response.encode())
 
         audio_response = build_rpc_response(
-            "R7cb6c", [["artifact_123", "Audio Overview", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["artifact_123", "Audio Overview", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=audio_response.encode())
 
@@ -43,7 +43,7 @@ class TestStudioContent:
         assert result.status in ("pending", "in_progress", "processing")
 
         request = httpx_mock.get_requests()[-1]
-        assert "R7cb6c" in str(request.url)
+        assert RPCMethod.CREATE_VIDEO.value in str(request.url)
 
     @pytest.mark.asyncio
     async def test_generate_audio_with_format_and_length(
@@ -53,7 +53,7 @@ class TestStudioContent:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -68,7 +68,7 @@ class TestStudioContent:
         httpx_mock.add_response(content=notebook_response.encode())
 
         response = build_rpc_response(
-            "R7cb6c", [["artifact_123", "Audio Overview", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["artifact_123", "Audio Overview", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -90,7 +90,7 @@ class TestStudioContent:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -103,7 +103,7 @@ class TestStudioContent:
             ],
         )
         video_response = build_rpc_response(
-            "R7cb6c", [["artifact_456", "Video Overview", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["artifact_456", "Video Overview", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=video_response.encode())
@@ -126,7 +126,7 @@ class TestStudioContent:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -139,7 +139,7 @@ class TestStudioContent:
             ],
         )
         slide_deck_response = build_rpc_response(
-            "R7cb6c", [["artifact_456", "Slide Deck", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["artifact_456", "Slide Deck", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=slide_deck_response.encode())
@@ -158,7 +158,7 @@ class TestStudioContent:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "gArtLc", ["task_id_123", "completed", "https://audio.url"]
+            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "completed", "https://audio.url"]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -182,7 +182,7 @@ class TestGenerateQuiz:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -195,7 +195,7 @@ class TestGenerateQuiz:
             ],
         )
         quiz_response = build_rpc_response(
-            "R7cb6c", [["quiz_123", "Quiz", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["quiz_123", "Quiz", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=quiz_response.encode())
@@ -215,7 +215,7 @@ class TestDeleteStudioContent:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response("V5N4be", [True])
+        response = build_rpc_response(RPCMethod.DELETE_STUDIO, [True])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -233,7 +233,7 @@ class TestMindMap:
         build_rpc_response,
     ):
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -245,7 +245,7 @@ class TestMindMap:
                 ]
             ],
         )
-        mindmap_response = build_rpc_response("yyryJe", None)
+        mindmap_response = build_rpc_response(RPCMethod.ACT_ON_SOURCES, None)
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=mindmap_response.encode())
 
@@ -267,15 +267,19 @@ class TestArtifactsAPI:
         build_rpc_response,
     ):
         """Test listing all artifacts."""
-        response = build_rpc_response(
-            "gArtLc",
+        # Response for LIST_ARTIFACTS (gArtLc)
+        response1 = build_rpc_response(
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Audio Overview", 1, None, "completed"],
                 ["art_002", "Quiz", 4, None, "completed"],
                 ["art_003", "Study Guide", 2, None, "completed"],
             ],
         )
-        httpx_mock.add_response(content=response.encode())
+        # Response for GET_NOTES_AND_MIND_MAPS (cFji9) - empty (no mind maps)
+        response2 = build_rpc_response(RPCMethod.GET_NOTES_AND_MIND_MAPS, [[]])
+        httpx_mock.add_response(content=response1.encode())
+        httpx_mock.add_response(content=response2.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             artifacts = await client.artifacts.list("nb_123")
@@ -290,14 +294,14 @@ class TestArtifactsAPI:
         build_rpc_response,
     ):
         """Test renaming an artifact."""
-        response = build_rpc_response("rc3d8d", None)
+        response = build_rpc_response(RPCMethod.RENAME_ARTIFACT, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.artifacts.rename("nb_123", "art_001", "New Title")
 
         request = httpx_mock.get_request()
-        assert "rc3d8d" in str(request.url)
+        assert RPCMethod.RENAME_ARTIFACT.value in str(request.url)
 
     @pytest.mark.asyncio
     async def test_export_artifact(
@@ -307,7 +311,7 @@ class TestArtifactsAPI:
         build_rpc_response,
     ):
         """Test exporting an artifact."""
-        response = build_rpc_response("Krh3pd", ["export_content_here"])
+        response = build_rpc_response(RPCMethod.EXPORT_ARTIFACT, ["export_content_here"])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -315,7 +319,7 @@ class TestArtifactsAPI:
 
         assert result is not None
         request = httpx_mock.get_request()
-        assert "Krh3pd" in str(request.url)
+        assert RPCMethod.EXPORT_ARTIFACT.value in str(request.url)
 
     @pytest.mark.asyncio
     async def test_generate_flashcards(
@@ -326,7 +330,7 @@ class TestArtifactsAPI:
     ):
         """Test generating flashcards."""
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -339,7 +343,7 @@ class TestArtifactsAPI:
             ],
         )
         flashcards_response = build_rpc_response(
-            "R7cb6c", [["fc_123", "Flashcards", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["fc_123", "Flashcards", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=flashcards_response.encode())
@@ -359,7 +363,7 @@ class TestArtifactsAPI:
     ):
         """Test generating study guide."""
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -372,7 +376,7 @@ class TestArtifactsAPI:
             ],
         )
         guide_response = build_rpc_response(
-            "R7cb6c", [["sg_123", "Study Guide", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["sg_123", "Study Guide", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=guide_response.encode())
@@ -392,7 +396,7 @@ class TestArtifactsAPI:
     ):
         """Test generating infographic."""
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -405,7 +409,7 @@ class TestArtifactsAPI:
             ],
         )
         infographic_response = build_rpc_response(
-            "R7cb6c", [["ig_123", "Infographic", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["ig_123", "Infographic", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=infographic_response.encode())
@@ -425,7 +429,7 @@ class TestArtifactsAPI:
     ):
         """Test generating data table."""
         notebook_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -438,7 +442,7 @@ class TestArtifactsAPI:
             ],
         )
         table_response = build_rpc_response(
-            "R7cb6c", [["dt_123", "Data Table", "2024-01-05", None, 1]]
+            RPCMethod.CREATE_VIDEO, [["dt_123", "Data Table", "2024-01-05", None, 1]]
         )
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=table_response.encode())
@@ -457,8 +461,12 @@ class TestArtifactsAPI:
         build_rpc_response,
     ):
         """Test getting a non-existent artifact returns None."""
-        response = build_rpc_response("gArtLc", [])
-        httpx_mock.add_response(content=response.encode())
+        # Response for LIST_ARTIFACTS (gArtLc) - empty
+        response1 = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [])
+        # Response for GET_NOTES_AND_MIND_MAPS (cFji9) - empty
+        response2 = build_rpc_response(RPCMethod.GET_NOTES_AND_MIND_MAPS, [[]])
+        httpx_mock.add_response(content=response1.encode())
+        httpx_mock.add_response(content=response2.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.artifacts.get("nb_123", "nonexistent")
@@ -474,7 +482,7 @@ class TestArtifactsAPI:
     ):
         """Test listing audio artifacts."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Audio Overview", 1, None, 3],
                 ["art_002", "Quiz", 4, None, 3],
@@ -496,7 +504,7 @@ class TestArtifactsAPI:
     ):
         """Test listing video artifacts."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Video Overview", 3, None, 3],
                 ["art_002", "Audio Overview", 1, None, 3],
@@ -518,7 +526,7 @@ class TestArtifactsAPI:
     ):
         """Test listing quiz artifacts (list_quizzes)."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Quiz", 4, None, 3, None, [None, None, None, None, None, None, 2]],
                 ["art_002", "Flashcards", 4, None, 3, None, [None, None, None, None, None, None, 1]],
@@ -539,7 +547,7 @@ class TestArtifactsAPI:
         build_rpc_response,
     ):
         """Test deleting an artifact."""
-        response = build_rpc_response("V5N4be", None)
+        response = build_rpc_response(RPCMethod.DELETE_STUDIO, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -547,7 +555,7 @@ class TestArtifactsAPI:
 
         assert result is True
         request = httpx_mock.get_request()
-        assert "V5N4be" in str(request.url)
+        assert RPCMethod.DELETE_STUDIO in str(request.url)
 
     @pytest.mark.asyncio
     async def test_share_audio(
@@ -558,7 +566,7 @@ class TestArtifactsAPI:
     ):
         """Test sharing audio overview."""
         response = build_rpc_response(
-            "RGP97b",
+            RPCMethod.SHARE_AUDIO,
             ["https://notebooklm.google.com/share/abc123"],
         )
         httpx_mock.add_response(content=response.encode())
@@ -568,7 +576,7 @@ class TestArtifactsAPI:
 
         assert result is not None
         request = httpx_mock.get_request()
-        assert "RGP97b" in str(request.url)
+        assert RPCMethod.SHARE_AUDIO in str(request.url)
 
     @pytest.mark.asyncio
     async def test_list_flashcards(
@@ -579,7 +587,7 @@ class TestArtifactsAPI:
     ):
         """Test listing flashcard artifacts."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Quiz", 4, None, 3, None, [None, None, None, None, None, None, 2]],
                 ["art_002", "Flashcards", 4, None, 3, None, [None, None, None, None, None, None, 1]],
@@ -601,7 +609,7 @@ class TestArtifactsAPI:
     ):
         """Test listing infographic artifacts."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Infographic", 7, None, 3],
                 ["art_002", "Audio", 1, None, 3],
@@ -623,7 +631,7 @@ class TestArtifactsAPI:
     ):
         """Test listing slide deck artifacts."""
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Slide Deck", 8, None, 3],
                 ["art_002", "Video", 3, None, 3],
@@ -649,7 +657,7 @@ class TestArtifactErrorPaths:
     ):
         """Test download_audio raises error when no completed audio exists."""
         # LIST_ARTIFACTS returns empty (no audio artifacts)
-        response = build_rpc_response("gArtLc", [[]])
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -666,7 +674,7 @@ class TestArtifactErrorPaths:
         """Test download_audio raises error when specific artifact_id not found."""
         # Return an audio artifact but not the one requested
         response = build_rpc_response(
-            "gArtLc",
+            RPCMethod.LIST_ARTIFACTS,
             [
                 [
                     ["other_audio_id", "Audio", 1, None, 3, None, []],
@@ -689,7 +697,7 @@ class TestArtifactErrorPaths:
         build_rpc_response,
     ):
         """Test download_video raises error when no completed video exists."""
-        response = build_rpc_response("gArtLc", [[]])
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -704,7 +712,7 @@ class TestArtifactErrorPaths:
         build_rpc_response,
     ):
         """Test download_infographic raises error when none completed."""
-        response = build_rpc_response("gArtLc", [[]])
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -719,7 +727,7 @@ class TestArtifactErrorPaths:
         build_rpc_response,
     ):
         """Test download_slide_deck raises error when none completed."""
-        response = build_rpc_response("gArtLc", [[]])
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -735,7 +743,7 @@ class TestArtifactErrorPaths:
     ):
         """Test poll_status returns url when available."""
         response = build_rpc_response(
-            "gArtLc", ["task_id_123", "completed", "https://audio.url", None]
+            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "completed", "https://audio.url", None]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -757,7 +765,7 @@ class TestArtifactErrorPaths:
     ):
         """Test poll_status returns error message when available."""
         response = build_rpc_response(
-            "gArtLc", ["task_id_123", "failed", None, "Generation failed"]
+            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "failed", None, "Generation failed"]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -791,8 +799,12 @@ class TestArtifactErrorPaths:
         build_rpc_response,
     ):
         """Test listing artifacts when notebook has none."""
-        response = build_rpc_response("gArtLc", [[]])
-        httpx_mock.add_response(content=response.encode())
+        # Response for LIST_ARTIFACTS (gArtLc) - empty
+        response1 = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[]])
+        # Response for GET_NOTES_AND_MIND_MAPS (cFji9) - empty
+        response2 = build_rpc_response(RPCMethod.GET_NOTES_AND_MIND_MAPS, [[]])
+        httpx_mock.add_response(content=response1.encode())
+        httpx_mock.add_response(content=response2.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             artifacts = await client.artifacts.list("nb_123")

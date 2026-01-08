@@ -390,6 +390,63 @@ class Artifact:
             variant=variant,
         )
 
+    @classmethod
+    def from_mind_map(cls, data: list[Any]) -> Optional["Artifact"]:
+        """Parse artifact from mind map data (stored in notes system).
+
+        Mind map structure:
+        [
+            "mind_map_id",
+            [
+                "mind_map_id",           # [1][0]: ID
+                "JSON_content",          # [1][1]: Mind map JSON
+                [1, "user_id", [ts, ns]],  # [1][2]: Metadata
+                None,                    # [1][3]
+                "title"                  # [1][4]: Title
+            ]
+        ]
+
+        Deleted/cleared mind map: ["id", None, 2]
+
+        Returns:
+            Artifact object, or None if deleted (status=2).
+        """
+        if not isinstance(data, list) or len(data) < 1:
+            return None
+
+        mind_map_id = data[0] if len(data) > 0 else ""
+
+        # Check for deleted status (item[1] is None with status=2)
+        if len(data) >= 3 and data[1] is None and data[2] == 2:
+            return None  # Deleted, don't include
+
+        # Extract title and timestamp from nested structure
+        title = ""
+        created_at = None
+
+        if len(data) > 1 and isinstance(data[1], list):
+            inner = data[1]
+            # Title is at position [4]
+            if len(inner) > 4 and isinstance(inner[4], str):
+                title = inner[4]
+            # Timestamp is at [2][2][0]
+            if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 2:
+                ts_data = inner[2][2]
+                if isinstance(ts_data, list) and len(ts_data) > 0:
+                    try:
+                        created_at = datetime.fromtimestamp(ts_data[0])
+                    except (TypeError, ValueError):
+                        pass
+
+        return cls(
+            id=str(mind_map_id),
+            title=title,
+            artifact_type=5,  # StudioContentType.MIND_MAP
+            status=3,  # Mind maps are always "completed" once created
+            created_at=created_at,
+            variant=None,
+        )
+
     @property
     def is_completed(self) -> bool:
         """Check if artifact generation is complete."""

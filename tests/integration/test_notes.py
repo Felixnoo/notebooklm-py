@@ -4,6 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.rpc import RPCMethod
 
 
 class TestNotesAPI:
@@ -18,7 +19,7 @@ class TestNotesAPI:
     ):
         """Test listing notes in a notebook."""
         response = build_rpc_response(
-            "cFji9",
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
                 [
                     ["note_001", ["note_001", "Note content 1", None, None, "My First Note"]],
@@ -46,7 +47,7 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test listing notes when notebook is empty."""
-        response = build_rpc_response("cFji9", [[]])
+        response = build_rpc_response(RPCMethod.GET_NOTES_AND_MIND_MAPS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -63,7 +64,7 @@ class TestNotesAPI:
     ):
         """Test that list() filters out mind maps."""
         response = build_rpc_response(
-            "cFji9",
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
                 [
                     ["note_001", ["note_001", "Regular note content", None, None, "Regular Note"]],
@@ -88,7 +89,7 @@ class TestNotesAPI:
     ):
         """Test getting a specific note by ID."""
         response = build_rpc_response(
-            "cFji9",
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
                 [
                     ["note_001", ["note_001", "Content 1", None, None, "Note 1"]],
@@ -115,7 +116,7 @@ class TestNotesAPI:
     ):
         """Test getting a note that doesn't exist."""
         response = build_rpc_response(
-            "cFji9",
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
                 [
                     ["note_001", ["note_001", "Content", None, None, "Title"]],
@@ -137,10 +138,10 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test creating a new note."""
-        create_response = build_rpc_response("CYK0Xb", [["new_note_id"]])
+        create_response = build_rpc_response(RPCMethod.CREATE_NOTE, [["new_note_id"]])
         httpx_mock.add_response(content=create_response.encode())
 
-        update_response = build_rpc_response("cYAfTb", None)
+        update_response = build_rpc_response(RPCMethod.UPDATE_NOTE, None)
         httpx_mock.add_response(content=update_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -151,8 +152,8 @@ class TestNotesAPI:
         assert note.content == "My Content"
 
         requests = httpx_mock.get_requests()
-        assert "CYK0Xb" in str(requests[0].url)
-        assert "cYAfTb" in str(requests[1].url)
+        assert RPCMethod.CREATE_NOTE in str(requests[0].url)
+        assert RPCMethod.UPDATE_NOTE in str(requests[1].url)
 
     @pytest.mark.asyncio
     async def test_update_note(
@@ -162,14 +163,14 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test updating an existing note."""
-        response = build_rpc_response("cYAfTb", None)
+        response = build_rpc_response(RPCMethod.UPDATE_NOTE, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.notes.update("nb_123", "note_001", "Updated content", "Updated title")
 
         request = httpx_mock.get_request()
-        assert "cYAfTb" in str(request.url)
+        assert RPCMethod.UPDATE_NOTE in str(request.url)
         assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
 
     @pytest.mark.asyncio
@@ -180,7 +181,7 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test deleting a note."""
-        response = build_rpc_response("AH0mwd", None)
+        response = build_rpc_response(RPCMethod.DELETE_NOTE, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -188,7 +189,7 @@ class TestNotesAPI:
 
         assert result is True
         request = httpx_mock.get_request()
-        assert "AH0mwd" in str(request.url)
+        assert RPCMethod.DELETE_NOTE in str(request.url)
 
     @pytest.mark.asyncio
     async def test_list_mind_maps(
@@ -199,7 +200,7 @@ class TestNotesAPI:
     ):
         """Test listing mind maps in a notebook."""
         response = build_rpc_response(
-            "cFji9",
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
             [
                 [
                     ["note_001", ["note_001", "Regular note", None, None, "Note"]],
@@ -223,7 +224,7 @@ class TestNotesAPI:
         build_rpc_response,
     ):
         """Test deleting a mind map."""
-        response = build_rpc_response("AH0mwd", None)
+        response = build_rpc_response(RPCMethod.DELETE_NOTE, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -231,4 +232,4 @@ class TestNotesAPI:
 
         assert result is True
         request = httpx_mock.get_request()
-        assert "AH0mwd" in str(request.url)
+        assert RPCMethod.DELETE_NOTE in str(request.url)

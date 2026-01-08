@@ -11,6 +11,7 @@ from notebooklm.rpc.decoder import (
     decode_response,
     RPCError,
 )
+from notebooklm.rpc.types import RPCMethod
 
 
 class TestStripAntiXSSI:
@@ -66,7 +67,7 @@ class TestParseChunkedResponse:
     def test_handles_nested_json(self):
         """Test parsing chunks with nested JSON."""
         inner = json.dumps([["nested", "data"]])
-        chunk = ["wrb.fr", "wXbhsf", inner]
+        chunk = ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner]
         chunk_json = json.dumps(chunk)
         response = f"{len(chunk_json)}\n{chunk_json}\n"
 
@@ -74,7 +75,7 @@ class TestParseChunkedResponse:
 
         assert len(chunks) == 1
         assert chunks[0][0] == "wrb.fr"
-        assert chunks[0][1] == "wXbhsf"
+        assert chunks[0][1] == RPCMethod.LIST_NOTEBOOKS.value
 
     def test_empty_response(self):
         """Test empty response returns empty list."""
@@ -102,11 +103,11 @@ class TestExtractRPCResult:
         """Test extracting result for specific RPC ID."""
         inner_data = json.dumps([["notebook1"]])
         chunks = [
-            ["wrb.fr", "wXbhsf", inner_data, None, None],
+            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner_data, None, None],
             ["di", 123],  # Some other chunk type
         ]
 
-        result = extract_rpc_result(chunks, "wXbhsf")
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result == [["notebook1"]]
 
     def test_returns_none_if_not_found(self):
@@ -116,55 +117,55 @@ class TestExtractRPCResult:
             ["wrb.fr", "other_id", inner_data, None, None],
         ]
 
-        result = extract_rpc_result(chunks, "wXbhsf")
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result is None
 
     def test_handles_double_encoded_json(self):
         """Test handles JSON string inside JSON (common pattern)."""
         inner_json = json.dumps([["notebook1", "id1"]])
         chunks = [
-            ["wrb.fr", "wXbhsf", inner_json, None, None],
+            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner_json, None, None],
         ]
 
-        result = extract_rpc_result(chunks, "wXbhsf")
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result == [["notebook1", "id1"]]
 
     def test_handles_non_json_string_result(self):
         """Test handles string results that aren't JSON."""
         chunks = [
-            ["wrb.fr", "wXbhsf", "plain string result", None, None],
+            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, "plain string result", None, None],
         ]
 
-        result = extract_rpc_result(chunks, "wXbhsf")
+        result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result == "plain string result"
 
     def test_raises_on_error_chunk(self):
         """Test raises RPCError for error chunks."""
         chunks = [
-            ["er", "wXbhsf", "Some error message", None, None],
+            ["er", RPCMethod.LIST_NOTEBOOKS.value, "Some error message", None, None],
         ]
 
         with pytest.raises(RPCError, match="Some error message"):
-            extract_rpc_result(chunks, "wXbhsf")
+            extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_handles_numeric_error_code(self):
         """Test handles numeric error codes."""
         chunks = [
-            ["er", "wXbhsf", 403, None, None],
+            ["er", RPCMethod.LIST_NOTEBOOKS.value, 403, None, None],
         ]
 
         with pytest.raises(RPCError):
-            extract_rpc_result(chunks, "wXbhsf")
+            extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
 
 class TestDecodeResponse:
     def test_full_decode_pipeline(self):
         """Test complete decode from raw response to result."""
         inner_data = json.dumps([["My Notebook", "nb_123"]])
-        chunk = json.dumps(["wrb.fr", "wXbhsf", inner_data, None, None])
+        chunk = json.dumps(["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner_data, None, None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
-        result = decode_response(raw_response, "wXbhsf")
+        result = decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert result == [["My Notebook", "nb_123"]]
 
@@ -175,15 +176,15 @@ class TestDecodeResponse:
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         with pytest.raises(RPCError, match="No result found"):
-            decode_response(raw_response, "wXbhsf")
+            decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_decode_with_error_response(self):
         """Test decode when response contains error."""
-        chunk = json.dumps(["er", "wXbhsf", "Authentication failed", None])
+        chunk = json.dumps(["er", RPCMethod.LIST_NOTEBOOKS.value, "Authentication failed", None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         with pytest.raises(RPCError, match="Authentication failed"):
-            decode_response(raw_response, "wXbhsf")
+            decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_decode_complex_nested_data(self):
         """Test decoding complex nested data structures."""
@@ -191,10 +192,10 @@ class TestDecodeResponse:
             "notebooks": [{"id": "nb1", "title": "Test", "sources": [{"id": "s1"}]}]
         }
         inner = json.dumps(data)
-        chunk = json.dumps(["wrb.fr", "wXbhsf", inner, None, None])
+        chunk = json.dumps(["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner, None, None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
-        result = decode_response(raw_response, "wXbhsf")
+        result = decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert result["notebooks"][0]["id"] == "nb1"
 
@@ -203,11 +204,11 @@ class TestDecodeResponse:
         import logging
 
         inner_data = json.dumps([["data"]])
-        chunk = json.dumps(["wrb.fr", "wXbhsf", inner_data, None, None])
+        chunk = json.dumps(["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner_data, None, None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         with caplog.at_level(logging.DEBUG):
-            result = decode_response(raw_response, "wXbhsf", debug=True)
+            result = decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value, debug=True)
 
         assert result == [["data"]]
         assert "Looking for RPC ID: wXbhsf" in caplog.text
@@ -228,13 +229,13 @@ class TestDecodeResponse:
 
     def test_decode_error_response_includes_found_ids(self):
         """Test error response includes found_ids context."""
-        chunk = json.dumps(["er", "wXbhsf", "Auth failed", None])
+        chunk = json.dumps(["er", RPCMethod.LIST_NOTEBOOKS.value, "Auth failed", None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         with pytest.raises(RPCError) as exc_info:
-            decode_response(raw_response, "wXbhsf")
+            decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
-        assert exc_info.value.found_ids == ["wXbhsf"]
+        assert exc_info.value.found_ids == [RPCMethod.LIST_NOTEBOOKS.value]
 
 
 class TestCollectRpcIds:

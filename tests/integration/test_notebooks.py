@@ -4,6 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient, Notebook
+from notebooklm.rpc import RPCMethod
 
 
 class TestListNotebooks:
@@ -38,7 +39,7 @@ class TestListNotebooks:
 
         request = httpx_mock.get_request()
         assert request.method == "POST"
-        assert "wXbhsf" in str(request.url)
+        assert RPCMethod.LIST_NOTEBOOKS.value in str(request.url)
         assert b"f.req=" in request.content
 
     @pytest.mark.asyncio
@@ -84,7 +85,7 @@ class TestCreateNotebook:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "CCqFvf",
+            RPCMethod.CREATE_NOTEBOOK,
             [
                 "My Notebook",
                 [],
@@ -111,7 +112,7 @@ class TestCreateNotebook:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "CCqFvf",
+            RPCMethod.CREATE_NOTEBOOK,
             ["Test Title", [], "id", "📓", None, [None, None, None, None, None, [1704067200, 0]]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -120,7 +121,7 @@ class TestCreateNotebook:
             await client.notebooks.create("Test Title")
 
         request = httpx_mock.get_request()
-        assert "CCqFvf" in str(request.url)
+        assert RPCMethod.CREATE_NOTEBOOK.value in str(request.url)
 
 
 class TestGetNotebook:
@@ -132,7 +133,7 @@ class TestGetNotebook:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -161,7 +162,7 @@ class TestGetNotebook:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [["Name", [], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -181,7 +182,7 @@ class TestDeleteNotebook:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response("WWINqb", [True])
+        response = build_rpc_response(RPCMethod.DELETE_NOTEBOOK, [True])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -199,7 +200,7 @@ class TestSummary:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "VfAZjd", ["Summary of the notebook content..."]
+            RPCMethod.SUMMARIZE, ["Summary of the notebook content..."]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -218,11 +219,11 @@ class TestRenameNotebook:
         build_rpc_response,
     ):
         # First response for rename (returns null)
-        rename_response = build_rpc_response("s0tc2d", None)
+        rename_response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=rename_response.encode())
         # Second response for get_notebook call after rename
         get_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "New Title",
@@ -251,11 +252,11 @@ class TestRenameNotebook:
         build_rpc_response,
     ):
         # Rename response (returns null)
-        rename_response = build_rpc_response("s0tc2d", None)
+        rename_response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=rename_response.encode())
         # Get notebook response after rename
         get_response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [["Renamed", [], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
         )
         httpx_mock.add_response(content=get_response.encode())
@@ -264,7 +265,7 @@ class TestRenameNotebook:
             await client.notebooks.rename("nb_123", "Renamed")
 
         request = httpx_mock.get_requests()[0]
-        assert "s0tc2d" in str(request.url)
+        assert RPCMethod.RENAME_NOTEBOOK.value in str(request.url)
         assert "source-path=%2F" in str(request.url)
 
 
@@ -280,7 +281,7 @@ class TestNotebooksAPIAdditional:
     ):
         """Test sharing a notebook with settings."""
         response = build_rpc_response(
-            "QDyure",
+            RPCMethod.SHARE_PROJECT,
             ["https://notebooklm.google.com/notebook/abc123?share=true"],
         )
         httpx_mock.add_response(content=response.encode())
@@ -291,7 +292,7 @@ class TestNotebooksAPIAdditional:
 
         assert result is not None
         request = httpx_mock.get_request()
-        assert "QDyure" in str(request.url)
+        assert RPCMethod.SHARE_PROJECT in str(request.url)
 
     @pytest.mark.asyncio
     async def test_get_summary_additional(
@@ -302,7 +303,7 @@ class TestNotebooksAPIAdditional:
     ):
         """Test getting notebook summary."""
         response = build_rpc_response(
-            "VfAZjd",
+            RPCMethod.SUMMARIZE,
             ["This is a comprehensive summary of the notebook content..."],
         )
         httpx_mock.add_response(content=response.encode())
@@ -402,7 +403,7 @@ class TestNotebooksAPIAdditional:
             ["Test Notebook", [["src1"], ["src2"]], "nb_123", "📘"],
             ["extra", "metadata"],
         ]
-        response = build_rpc_response("rLM1Ne", raw_data)
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, raw_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -421,7 +422,7 @@ class TestNotebooksAPIAdditional:
     ):
         """Test getting notebook description with summary and topics."""
         response = build_rpc_response(
-            "VfAZjd",
+            RPCMethod.SUMMARIZE,
             [
                 ["This notebook covers AI research."],
                 [[
@@ -452,7 +453,7 @@ class TestNotebookEdgeCases:
         build_rpc_response,
     ):
         """Test listing notebooks when none exist."""
-        response = build_rpc_response("wXbhsf", [])
+        response = build_rpc_response(RPCMethod.LIST_NOTEBOOKS, [])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -468,7 +469,7 @@ class TestNotebookEdgeCases:
         build_rpc_response,
     ):
         """Test listing notebooks with nested empty array."""
-        response = build_rpc_response("wXbhsf", [[]])
+        response = build_rpc_response(RPCMethod.LIST_NOTEBOOKS, [[]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -484,7 +485,7 @@ class TestNotebookEdgeCases:
         build_rpc_response,
     ):
         """Test getting summary when empty."""
-        response = build_rpc_response("VfAZjd", [])
+        response = build_rpc_response(RPCMethod.SUMMARIZE, [])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -501,7 +502,7 @@ class TestNotebookEdgeCases:
     ):
         """Test getting description with no suggested topics."""
         response = build_rpc_response(
-            "VfAZjd",
+            RPCMethod.SUMMARIZE,
             [["Summary text"], []],
         )
         httpx_mock.add_response(content=response.encode())
@@ -521,7 +522,7 @@ class TestNotebookEdgeCases:
     ):
         """Test getting description with malformed topic data."""
         response = build_rpc_response(
-            "VfAZjd",
+            RPCMethod.SUMMARIZE,
             [
                 ["Summary"],
                 [[

@@ -7,6 +7,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient, Source
+from notebooklm.rpc import RPCMethod
 
 
 class TestAddSource:
@@ -18,7 +19,7 @@ class TestAddSource:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "izAoDd",
+            RPCMethod.ADD_SOURCE,
             [
                 [
                     [
@@ -47,7 +48,7 @@ class TestAddSource:
         build_rpc_response,
     ):
         response = build_rpc_response(
-            "izAoDd", [[[["source_id"], "My Document", [None, 11], [None, 2]]]]
+            RPCMethod.ADD_SOURCE, [[[["source_id"], "My Document", [None, 11], [None, 2]]]]
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -69,7 +70,7 @@ class TestDeleteSource:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response("tGMBJ", [True])
+        response = build_rpc_response(RPCMethod.DELETE_SOURCE, [True])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -84,14 +85,14 @@ class TestDeleteSource:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response("tGMBJ", [True])
+        response = build_rpc_response(RPCMethod.DELETE_SOURCE, [True])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.sources.delete("nb_123", "source_456")
 
         request = httpx_mock.get_request()
-        assert "tGMBJ" in str(request.url)
+        assert RPCMethod.DELETE_SOURCE in str(request.url)
         assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
 
 
@@ -105,7 +106,7 @@ class TestGetSource:
     ):
         # get_source filters from get_notebook, so mock GET_NOTEBOOK response
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -142,7 +143,7 @@ class TestSourcesAPI:
     ):
         """Test listing sources with various types."""
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
@@ -178,7 +179,7 @@ class TestSourcesAPI:
     ):
         """Test listing sources from empty notebook."""
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [["Empty Notebook", [], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -197,7 +198,7 @@ class TestSourcesAPI:
     ):
         """Test getting a non-existent source."""
         response = build_rpc_response(
-            "rLM1Ne",
+            RPCMethod.GET_NOTEBOOK,
             [["Notebook", [[["src_001"], "Source 1", [None, 0], [None, 2]]], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -216,7 +217,7 @@ class TestSourcesAPI:
     ):
         """Test adding a Google Drive source."""
         response = build_rpc_response(
-            "izAoDd",
+            RPCMethod.ADD_SOURCE,
             [[[["drive_001"], "My Doc", [None, 0], [None, 2]]]],
         )
         httpx_mock.add_response(content=response.encode())
@@ -231,7 +232,7 @@ class TestSourcesAPI:
 
         assert source is not None
         request = httpx_mock.get_request()
-        assert "izAoDd" in str(request.url)
+        assert RPCMethod.ADD_SOURCE in str(request.url)
 
     @pytest.mark.asyncio
     async def test_refresh_source(
@@ -241,7 +242,7 @@ class TestSourcesAPI:
         build_rpc_response,
     ):
         """Test refreshing a source."""
-        response = build_rpc_response("FLmJqe", None)
+        response = build_rpc_response(RPCMethod.REFRESH_SOURCE, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -249,7 +250,7 @@ class TestSourcesAPI:
 
         assert result is True
         request = httpx_mock.get_request()
-        assert "FLmJqe" in str(request.url)
+        assert RPCMethod.REFRESH_SOURCE in str(request.url)
 
     @pytest.mark.asyncio
     async def test_check_freshness_fresh(
@@ -292,7 +293,7 @@ class TestSourcesAPI:
     ):
         """Test getting source guide."""
         response = build_rpc_response(
-            "tr032e",
+            RPCMethod.GET_SOURCE_GUIDE,
             [
                 [
                     None,
@@ -318,7 +319,7 @@ class TestSourcesAPI:
         build_rpc_response,
     ):
         """Test getting guide for source with no AI analysis."""
-        response = build_rpc_response("tr032e", [[None, [], []]])
+        response = build_rpc_response(RPCMethod.GET_SOURCE_GUIDE, [[None, [], []]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -365,7 +366,7 @@ class TestAddFileSource:
 
         # Step 1: Mock RPC registration response (o4cbdc)
         rpc_response = build_rpc_response(
-            "o4cbdc",
+            RPCMethod.ADD_SOURCE_FILE,
             [
                 [
                     [["file_source_123"], "test_document.txt", [None, None, None, None, 0]]
@@ -406,7 +407,7 @@ class TestAddFileSource:
         assert len(requests) == 3
 
         # Verify Step 1: RPC call
-        assert "o4cbdc" in str(requests[0].url)
+        assert RPCMethod.ADD_SOURCE_FILE in str(requests[0].url)
 
         # Verify Step 2: Upload start
         assert "x-goog-upload-command" in requests[1].headers
@@ -430,7 +431,7 @@ class TestAddFileSource:
 
         # Mock all 3 responses
         rpc_response = build_rpc_response(
-            "o4cbdc",
+            RPCMethod.ADD_SOURCE_FILE,
             [[[[" src_id"], "my_file.pdf", [None, None, None, None, 0]]]],
         )
         httpx_mock.add_response(url=re.compile(r".*batchexecute.*"), content=rpc_response.encode())
@@ -481,7 +482,7 @@ class TestAddFileSource:
         test_file.write_text(content)
 
         rpc_response = build_rpc_response(
-            "o4cbdc",
+            RPCMethod.ADD_SOURCE_FILE,
             [[[["src_abc"], "document.txt", [None, None, None, None, 0]]]],
         )
         httpx_mock.add_response(url=re.compile(r".*batchexecute.*"), content=rpc_response.encode())
@@ -522,7 +523,7 @@ class TestAddFileSource:
         test_file.write_bytes(binary_content)
 
         rpc_response = build_rpc_response(
-            "o4cbdc",
+            RPCMethod.ADD_SOURCE_FILE,
             [[[["src_bin"], "binary_file.bin", [None, None, None, None, 0]]]],
         )
         httpx_mock.add_response(url=re.compile(r".*batchexecute.*"), content=rpc_response.encode())

@@ -20,7 +20,7 @@ class TestEncodeRPCRequest:
         assert len(result[0]) == 1
 
         inner = result[0][0]
-        assert inner[0] == "wXbhsf"  # RPC ID
+        assert inner[0] == RPCMethod.LIST_NOTEBOOKS.value  # RPC ID
         assert inner[2] is None
         assert inner[3] == "generic"
 
@@ -34,7 +34,7 @@ class TestEncodeRPCRequest:
         result = encode_rpc_request(RPCMethod.CREATE_NOTEBOOK, params)
 
         inner = result[0][0]
-        assert inner[0] == "CCqFvf"
+        assert inner[0] == RPCMethod.CREATE_NOTEBOOK.value
         decoded_params = json.loads(inner[1])
         assert decoded_params[0] == "Test Notebook"
 
@@ -69,7 +69,7 @@ class TestEncodeRPCRequest:
 class TestBuildRequestBody:
     def test_body_is_form_encoded(self):
         """Test that body is properly form-encoded."""
-        rpc_request = [[["wXbhsf", "[]", None, "generic"]]]
+        rpc_request = [[[RPCMethod.LIST_NOTEBOOKS.value, "[]", None, "generic"]]]
         csrf_token = "test_token_123"
 
         body = build_request_body(rpc_request, csrf_token)
@@ -80,7 +80,7 @@ class TestBuildRequestBody:
 
     def test_body_url_encodes_json(self):
         """Test that JSON in f.req is URL-encoded."""
-        rpc_request = [[["wXbhsf", '["test"]', None, "generic"]]]
+        rpc_request = [[[RPCMethod.LIST_NOTEBOOKS.value, '["test"]', None, "generic"]]]
         csrf_token = "token"
 
         body = build_request_body(rpc_request, csrf_token)
@@ -92,7 +92,7 @@ class TestBuildRequestBody:
 
     def test_csrf_token_encoded(self):
         """Test CSRF token with special chars is encoded."""
-        rpc_request = [[["wXbhsf", "[]", None, "generic"]]]
+        rpc_request = [[[RPCMethod.LIST_NOTEBOOKS.value, "[]", None, "generic"]]]
         csrf_token = "token:with/special=chars"
 
         body = build_request_body(rpc_request, csrf_token)
@@ -103,7 +103,7 @@ class TestBuildRequestBody:
 
     def test_body_without_csrf(self):
         """Test body can be built without CSRF token."""
-        rpc_request = [[["wXbhsf", "[]", None, "generic"]]]
+        rpc_request = [[[RPCMethod.LIST_NOTEBOOKS.value, "[]", None, "generic"]]]
 
         body = build_request_body(rpc_request, csrf_token=None)
 
@@ -112,7 +112,7 @@ class TestBuildRequestBody:
 
     def test_body_with_session_id(self):
         """Test body with session ID parameter."""
-        rpc_request = [[["wXbhsf", "[]", None, "generic"]]]
+        rpc_request = [[[RPCMethod.LIST_NOTEBOOKS.value, "[]", None, "generic"]]]
 
         body = build_request_body(rpc_request, csrf_token="token", session_id="sess123")
 
@@ -125,7 +125,7 @@ class TestBuildUrlParams:
         """Test basic URL params with only method."""
         result = build_url_params(RPCMethod.LIST_NOTEBOOKS)
 
-        assert result["rpcids"] == "wXbhsf"
+        assert result["rpcids"] == RPCMethod.LIST_NOTEBOOKS.value
         assert result["source-path"] == "/"
         assert result["hl"] == "en"
         assert result["rt"] == "c"
@@ -139,7 +139,7 @@ class TestBuildUrlParams:
             source_path="/notebook/abc123"
         )
 
-        assert result["rpcids"] == "rLM1Ne"
+        assert result["rpcids"] == RPCMethod.GET_NOTEBOOK.value
         assert result["source-path"] == "/notebook/abc123"
 
     def test_with_session_id(self):
@@ -169,7 +169,7 @@ class TestBuildUrlParams:
             bl="build_label_123"
         )
 
-        assert result["rpcids"] == "CCqFvf"
+        assert result["rpcids"] == RPCMethod.CREATE_NOTEBOOK.value
         assert result["source-path"] == "/notebook/xyz789"
         assert result["hl"] == "en"
         assert result["rt"] == "c"
@@ -191,8 +191,8 @@ class TestBuildUrlParams:
     def test_various_rpc_methods(self):
         """Test URL params for different RPC methods."""
         methods = [
-            (RPCMethod.DELETE_NOTEBOOK, "WWINqb"),
-            (RPCMethod.ADD_SOURCE, "izAoDd"),
+            (RPCMethod.DELETE_NOTEBOOK, RPCMethod.DELETE_NOTEBOOK.value),
+            (RPCMethod.ADD_SOURCE, RPCMethod.ADD_SOURCE.value),
             (RPCMethod.SUMMARIZE, "VfAZjd"),
         ]
 

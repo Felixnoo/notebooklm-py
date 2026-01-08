@@ -6,13 +6,19 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import asyncio
+import logging
 import os
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from ._core import ClientCore
 from .auth import download_with_browser, download_urls_with_browser
+import httpx
+
 from .rpc import (
     RPCMethod,
+    RPCError,
     StudioContentType,
     ArtifactStatus,
     AudioFormat,
@@ -28,6 +34,9 @@ from .rpc import (
     ReportFormat,
 )
 from .types import Artifact, GenerationStatus, ReportSuggestion
+
+if TYPE_CHECKING:
+    from ._notes import NotesAPI
 
 
 class ArtifactsAPI:
@@ -50,13 +59,15 @@ class ArtifactsAPI:
             await client.artifacts.rename(notebook_id, artifact_id, "New Title")
     """
 
-    def __init__(self, core: ClientCore):
+    def __init__(self, core: ClientCore, notes_api: "NotesAPI"):
         """Initialize the artifacts API.
 
         Args:
             core: The core client infrastructure.
+            notes_api: The notes API for accessing notes/mind maps.
         """
         self._core = core
+        self._notes = notes_api
 
     # =========================================================================
     # List/Get Operations
@@ -65,15 +76,26 @@ class ArtifactsAPI:
     async def list(
         self, notebook_id: str, artifact_type: Optional[int] = None
     ) -> List[Artifact]:
-        """List all artifacts in a notebook.
+        """List all artifacts in a notebook, including mind maps.
+
+        This returns all AI-generated content: Audio Overviews, Video Overviews,
+        Reports, Quizzes, Flashcards, Infographics, Slide Decks, Data Tables,
+        and Mind Maps.
+
+        Note: Mind maps are stored in a separate system (notes) but are included
+        here since they are AI-generated studio content.
 
         Args:
             notebook_id: The notebook ID.
             artifact_type: Optional StudioContentType value to filter by.
+                Use StudioContentType.MIND_MAP (5) to get only mind maps.
 
         Returns:
             List of Artifact objects.
         """
+        artifacts: List[Artifact] = []
+
+        # Fetch studio artifacts (audio, video, reports, etc.)
         params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
         result = await self._core.rpc_call(
             RPCMethod.LIST_ARTIFACTS,
@@ -86,12 +108,26 @@ class ArtifactsAPI:
         if result and isinstance(result, list) and len(result) > 0:
             artifacts_data = result[0] if isinstance(result[0], list) else result
 
-        artifacts = []
         for art_data in artifacts_data:
             if isinstance(art_data, list) and len(art_data) > 0:
                 artifact = Artifact.from_api_response(art_data)
                 if artifact_type is None or artifact.artifact_type == artifact_type:
                     artifacts.append(artifact)
+
+        # Fetch mind maps from notes system (if not filtering to non-mind-map type)
+        if artifact_type is None or artifact_type == StudioContentType.MIND_MAP.value:
+            try:
+                mind_maps = await self._notes.list_mind_maps(notebook_id)
+                for mm_data in mind_maps:
+                    artifact = Artifact.from_mind_map(mm_data)
+                    if artifact is not None:  # None means deleted (status=2)
+                        if artifact_type is None or artifact.artifact_type == artifact_type:
+                            artifacts.append(artifact)
+            except (RPCError, httpx.HTTPError) as e:
+                # Network/API errors - log and continue with studio artifacts
+                # This ensures users can see their audio/video/reports even if
+                # the mind maps endpoint is temporarily unavailable
+                logger.warning(f"Failed to fetch mind maps: {e}")
 
         return artifacts
 

@@ -33,7 +33,7 @@
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
-| `cFji9` | GET_NOTES | List notes and mind maps | `_notes.py` |
+| `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
 | `yyryJe` | ACT_ON_SOURCES | Mind map generation | `_artifacts.py` |
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_sources.py` |
@@ -47,6 +47,7 @@
 | `RGP97b` | SHARE_AUDIO | Share audio artifact | `_artifacts.py` |
 | `nS9Qlc` | LIST_FEATURED_PROJECTS | List featured notebooks | `_notebooks.py` |
 | `QDyure` | SHARE_PROJECT | Share notebook | `_notebooks.py` |
+| `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
 
 ### Content Type Codes (StudioContentType)
 
@@ -673,6 +674,8 @@ params = [
 # status = 3 → Completed
 ```
 
+**Python API Note:** `artifacts.list()` also fetches mind maps from GET_NOTES_AND_MIND_MAPS and includes them as Artifact objects (type=5). This provides a unified list of all AI-generated content. Mind maps with status=2 (deleted) are filtered out.
+
 ---
 
 ## Notes
@@ -711,21 +714,82 @@ params = [
 
 **Source:** `_notes.py::delete()`
 
+**Important:** This is a **soft delete** - it clears note content but does NOT remove the note from the list. The note remains with `None` content and a status flag of `2`.
+
 ```python
 params = [
     notebook_id,   # 0
     None,          # 1
     [note_id],     # 2: Single-nested note ID
 ]
+
+# BEFORE delete:
+# ['note_id', ['note_id', 'content', [metadata], None, 'title']]
+
+# AFTER delete:
+# ['note_id', None, 2]  # Status 2 = deleted/cleared
 ```
 
-### RPC: GET_NOTES (cFji9)
+**Note:** Same behavior applies to mind maps via `delete_mind_map()`. The Python API filters out items with status=2 in `list()` and `list_mind_maps()` to match UI behavior.
+
+### RPC: GET_NOTES_AND_MIND_MAPS (cFji9)
 
 **Source:** `_notes.py::_get_all_notes_and_mind_maps()`
 
 ```python
 params = [notebook_id]
 ```
+
+---
+
+## Note/Mind Map Data Structures
+
+Notes and mind maps share the same storage system and are distinguished by content format.
+
+### Active Note Structure
+
+```python
+[
+    "note_id",           # Position 0: Note ID
+    [
+        "note_id",       # [1][0]: ID (duplicate)
+        "content",       # [1][1]: Note content text
+        [                # [1][2]: Metadata
+            1,           # Type flag
+            "user_id",   # User ID
+            [ts, ns]     # [timestamp_seconds, nanoseconds]
+        ],
+        None,            # [1][3]: Unknown
+        "title"          # [1][4]: Note title
+    ]
+]
+```
+
+### Active Mind Map Structure
+
+```python
+[
+    "mind_map_id",       # Position 0: Mind map ID
+    [
+        "mind_map_id",   # [1][0]: ID (duplicate)
+        '{"name": "Root", "children": [...]}',  # [1][1]: JSON with children/nodes
+        [metadata],      # [1][2]: Same as notes
+        None,            # [1][3]: Unknown
+        "Mind Map Title" # [1][4]: Title
+    ]
+]
+```
+
+### Deleted Item Structure (Status = 2)
+
+```python
+["id", None, 2]  # Content cleared, status=2 indicates soft-deleted
+```
+
+The Python API:
+- `notes.list()` - Returns only active notes (excludes mind maps and status=2)
+- `notes.list_mind_maps()` - Returns only active mind maps (excludes status=2)
+- `artifacts.list()` - Includes mind maps as Artifact objects (excludes status=2)
 
 ---
 
@@ -1088,18 +1152,74 @@ await rpc_call(
 # Response: Share result with link information
 ```
 
+### RPC: GET_SUGGESTED_REPORTS (ciyUvf)
+
+**Source:** `_artifacts.py::suggest_reports()` (currently uses ACT_ON_SOURCES alternative)
+
+Get AI-suggested report formats based on notebook content.
+
+```python
+params = [
+    [2],            # 0: Fixed flag (same pattern as LIST_ARTIFACTS)
+    notebook_id,    # 1: Notebook ID
+]
+
+# Called with source_path:
+await rpc_call(
+    RPCMethod.GET_SUGGESTED_REPORTS,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+
+# Response structure:
+# [[
+#     [title, description, None, None, prompt, audience_level],
+#     ...
+# ]]
+#
+# Example response item:
+# ["Research Paper", "An academic paper analyzing...", None, None,
+#  "Write a research paper for an academic audience...", 2]
+#
+# audience_level: 1=Beginner, 2=Intermediate, 3=Advanced
+```
+
+**Note:** The current implementation uses `ACT_ON_SOURCES` with `"suggested_report_formats"` command as an alternative approach. This dedicated RPC method provides the same functionality.
+
 ---
 
-## RPC Methods (Not Yet Implemented)
+## RPC Methods (Unknown Purpose / Deprecated)
 
-These methods exist in `rpc/types.py` but don't have Python API implementations yet:
+These methods exist in `rpc/types.py` but could not be activated with any tested payload structure:
 
-| RPC ID | Method | Purpose | Notes |
-|--------|--------|---------|-------|
-| `DJezBc` | UPDATE_ARTIFACT | Update artifact content | Could be used for editing reports |
-| `WxBZtb` | DELETE_ARTIFACT | Delete artifact (alternate) | DELETE_STUDIO (`V5N4be`) is used instead |
-| `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested formats | Uses ACT_ON_SOURCES with `suggested_report_formats` command instead |
-| `YJBpHc` | GET_GUIDEBOOKS | Get guidebooks | Purpose unclear |
+| RPC ID | Method | Status | Notes |
+|--------|--------|--------|-------|
+| `DJezBc` | UPDATE_ARTIFACT | **All payloads return HTTP 400** | Tested with artifact IDs, note IDs, various nesting patterns |
+| `WxBZtb` | DELETE_ARTIFACT | **All payloads return HTTP 400** | Tested with artifact IDs, note IDs, various nesting patterns |
+| `YJBpHc` | GET_GUIDEBOOKS | Not tested | Purpose unclear |
+
+### Investigation Notes
+
+**DELETE_ARTIFACT (WxBZtb)** and **UPDATE_ARTIFACT (DJezBc)** were extensively tested with:
+- Artifact IDs from studio content (audio, reports, quizzes, etc.)
+- Note IDs from user-created notes
+- Mind map IDs
+- Various payload patterns:
+  - `[id]`, `[[id]]`, `[[[id]]]`
+  - `[[2], id]`, `[[2], id, notebook_id]`
+  - `[notebook_id, id]`, `[id, notebook_id]`
+  - RENAME_ARTIFACT-style patterns: `[[id, value], [[field]]]`
+  - Many other variations
+
+All tests returned HTTP 400 (Bad Request). These methods may be:
+- Deprecated and no longer functional
+- Reserved for internal Google use with undiscovered payload structures
+- Intended for entity types not yet identified
+
+**Working alternatives:**
+- For artifact deletion: Use `DELETE_STUDIO` (`V5N4be`) with `[[2], artifact_id]`
+- For artifact renaming: Use `RENAME_ARTIFACT` (`rc3d8d`) with `[[id, title], [["title"]]]`
+- For note deletion: Use `DELETE_NOTE` (`AH0mwd`) - but this only clears content, doesn't remove
 
 ---
 

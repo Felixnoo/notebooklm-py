@@ -4,6 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.rpc import RPCMethod
 from notebooklm.rpc import ChatGoal, ChatResponseLength
 from notebooklm.types import ChatMode
 
@@ -20,7 +21,7 @@ class TestChatAPI:
     ):
         """Test getting conversation history."""
         response = build_rpc_response(
-            "hPTbtc",
+            RPCMethod.GET_CONVERSATION_HISTORY,
             [
                 ["conv_001", "What is ML?", "Machine learning is...", 1704067200],
                 ["conv_002", "Explain AI", "Artificial intelligence...", 1704153600],
@@ -33,7 +34,7 @@ class TestChatAPI:
 
         assert result is not None
         request = httpx_mock.get_request()
-        assert "hPTbtc" in str(request.url)
+        assert RPCMethod.GET_CONVERSATION_HISTORY in str(request.url)
 
     @pytest.mark.asyncio
     async def test_get_history_empty(
@@ -43,7 +44,7 @@ class TestChatAPI:
         build_rpc_response,
     ):
         """Test getting empty conversation history."""
-        response = build_rpc_response("hPTbtc", [])
+        response = build_rpc_response(RPCMethod.GET_CONVERSATION_HISTORY, [])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -59,14 +60,14 @@ class TestChatAPI:
         build_rpc_response,
     ):
         """Test configuring chat with default settings."""
-        response = build_rpc_response("s0tc2d", None)
+        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.chat.configure("nb_123")
 
         request = httpx_mock.get_request()
-        assert "s0tc2d" in str(request.url)
+        assert RPCMethod.RENAME_NOTEBOOK in str(request.url)
 
     @pytest.mark.asyncio
     async def test_configure_learning_guide_mode(
@@ -76,7 +77,7 @@ class TestChatAPI:
         build_rpc_response,
     ):
         """Test configuring chat as learning guide."""
-        response = build_rpc_response("s0tc2d", None)
+        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -87,7 +88,7 @@ class TestChatAPI:
             )
 
         request = httpx_mock.get_request()
-        assert "s0tc2d" in str(request.url)
+        assert RPCMethod.RENAME_NOTEBOOK in str(request.url)
 
     @pytest.mark.asyncio
     async def test_configure_custom_mode_without_prompt_raises(
@@ -108,7 +109,7 @@ class TestChatAPI:
         build_rpc_response,
     ):
         """Test configuring chat with custom prompt."""
-        response = build_rpc_response("s0tc2d", None)
+        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -119,7 +120,7 @@ class TestChatAPI:
             )
 
         request = httpx_mock.get_request()
-        assert "s0tc2d" in str(request.url)
+        assert RPCMethod.RENAME_NOTEBOOK in str(request.url)
 
     @pytest.mark.asyncio
     async def test_set_mode(
@@ -129,14 +130,14 @@ class TestChatAPI:
         build_rpc_response,
     ):
         """Test setting chat mode with predefined config."""
-        response = build_rpc_response("s0tc2d", None)
+        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.chat.set_mode("nb_123", ChatMode.CONCISE)
 
         request = httpx_mock.get_request()
-        assert "s0tc2d" in str(request.url)
+        assert RPCMethod.RENAME_NOTEBOOK in str(request.url)
 
     def test_get_cached_turns_empty(self, auth_tokens):
         """Test getting cached turns for new conversation."""

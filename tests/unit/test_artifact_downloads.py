@@ -350,7 +350,10 @@ class TestDownloadUrl:
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
 
-            with patch.object(real_httpx, 'AsyncClient', return_value=mock_client):
+            # Mock load_httpx_cookies to avoid requiring real auth files
+            mock_cookies = MagicMock()
+            with patch.object(real_httpx, 'AsyncClient', return_value=mock_client), \
+                 patch('notebooklm._artifacts.load_httpx_cookies', return_value=mock_cookies):
                 result = await api._download_url(
                     "https://other.example.com/file.mp4", output_path
                 )

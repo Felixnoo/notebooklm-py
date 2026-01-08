@@ -11,6 +11,7 @@ from notebooklm.auth import (
     extract_csrf_from_html,
     extract_session_id_from_html,
     load_auth_from_storage,
+    load_httpx_cookies,
     fetch_tokens,
 )
 
@@ -290,6 +291,130 @@ class TestLoadAuthFromEnvVar:
             load_auth_from_storage()
 
 
+class TestLoadHttpxCookiesWithEnvVar:
+    """Test load_httpx_cookies with NOTEBOOKLM_AUTH_JSON env var."""
+
+    def test_loads_cookies_from_env_var(self, monkeypatch):
+        """Test loading httpx cookies from NOTEBOOKLM_AUTH_JSON env var."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_val", "domain": ".google.com"},
+                {"name": "HSID", "value": "hsid_val", "domain": ".google.com"},
+                {"name": "SSID", "value": "ssid_val", "domain": ".google.com"},
+                {"name": "APISID", "value": "apisid_val", "domain": ".google.com"},
+                {"name": "SAPISID", "value": "sapisid_val", "domain": ".google.com"},
+                {"name": "__Secure-1PSID", "value": "psid1_val", "domain": ".google.com"},
+                {"name": "__Secure-3PSID", "value": "psid3_val", "domain": ".google.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(storage_state))
+
+        cookies = load_httpx_cookies()
+
+        # Verify cookies were loaded
+        assert cookies.get("SID", domain=".google.com") == "sid_val"
+        assert cookies.get("HSID", domain=".google.com") == "hsid_val"
+        assert cookies.get("__Secure-1PSID", domain=".google.com") == "psid1_val"
+
+    def test_env_var_invalid_json_raises(self, monkeypatch):
+        """Test that invalid JSON in NOTEBOOKLM_AUTH_JSON raises ValueError."""
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "not valid json")
+
+        with pytest.raises(ValueError, match="Invalid JSON in NOTEBOOKLM_AUTH_JSON"):
+            load_httpx_cookies()
+
+    def test_env_var_empty_string_raises(self, monkeypatch):
+        """Test that empty string NOTEBOOKLM_AUTH_JSON raises ValueError."""
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "")
+
+        with pytest.raises(ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"):
+            load_httpx_cookies()
+
+    def test_env_var_missing_required_cookies_raises(self, monkeypatch):
+        """Test that missing required cookies raises ValueError."""
+        storage_state = {
+            "cookies": [
+                # SID is the minimum required cookie - omitting it should raise
+                {"name": "HSID", "value": "hsid_val", "domain": ".google.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(storage_state))
+
+        with pytest.raises(ValueError, match="Missing required cookies for downloads"):
+            load_httpx_cookies()
+
+    def test_env_var_filters_non_google_domains(self, monkeypatch):
+        """Test that cookies from non-Google domains are filtered out."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_val", "domain": ".google.com"},
+                {"name": "HSID", "value": "hsid_val", "domain": ".google.com"},
+                {"name": "SSID", "value": "ssid_val", "domain": ".google.com"},
+                {"name": "APISID", "value": "apisid_val", "domain": ".google.com"},
+                {"name": "SAPISID", "value": "sapisid_val", "domain": ".google.com"},
+                {"name": "__Secure-1PSID", "value": "psid1_val", "domain": ".google.com"},
+                {"name": "__Secure-3PSID", "value": "psid3_val", "domain": ".google.com"},
+                {"name": "evil_cookie", "value": "evil_val", "domain": ".evil.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(storage_state))
+
+        cookies = load_httpx_cookies()
+
+        # Google cookies should be present
+        assert cookies.get("SID", domain=".google.com") == "sid_val"
+        # Non-Google cookies should be filtered out
+        assert cookies.get("evil_cookie", domain=".evil.com") is None
+
+    def test_env_var_missing_cookies_key_raises(self, monkeypatch):
+        """Test that storage state without cookies key raises ValueError."""
+        storage_state = {"origins": []}  # Valid JSON but no cookies key
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(storage_state))
+
+        with pytest.raises(ValueError, match="must contain valid Playwright storage state"):
+            load_httpx_cookies()
+
+    def test_env_var_malformed_cookie_objects_skipped(self, monkeypatch):
+        """Test that malformed cookie objects are skipped gracefully."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_val", "domain": ".google.com"},  # Valid
+                {"name": "HSID"},  # Missing value and domain - should be skipped
+                {"value": "val"},  # Missing name - should be skipped
+                {},  # Empty object - should be skipped
+                {"name": "", "value": "val", "domain": ".google.com"},  # Empty name - skipped
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(storage_state))
+
+        # Should load successfully but only include valid SID cookie
+        cookies = load_httpx_cookies()
+        assert cookies.get("SID", domain=".google.com") == "sid_val"
+
+    def test_explicit_path_overrides_env_var(self, tmp_path, monkeypatch):
+        """Test that explicit path argument takes precedence over NOTEBOOKLM_AUTH_JSON."""
+        # Set env var with one value
+        env_storage = {
+            "cookies": [
+                {"name": "SID", "value": "from_env", "domain": ".google.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(env_storage))
+
+        # Create file with different value
+        file_storage = {
+            "cookies": [
+                {"name": "SID", "value": "from_file", "domain": ".google.com"},
+            ]
+        }
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(file_storage))
+
+        # Explicit path should win
+        cookies = load_httpx_cookies(path=storage_file)
+        assert cookies.get("SID", domain=".google.com") == "from_file"
+
+
 class TestExtractCSRFRedirect:
     """Test CSRF extraction redirect detection."""
 
@@ -519,8 +644,9 @@ class TestDefaultStoragePath:
 
         assert DEFAULT_STORAGE_PATH is not None
         assert isinstance(DEFAULT_STORAGE_PATH, Path)
-        assert ".notebooklm" in str(DEFAULT_STORAGE_PATH)
-        assert "storage_state.json" in str(DEFAULT_STORAGE_PATH)
+        # Note: Don't check for ".notebooklm" since NOTEBOOKLM_HOME may be set
+        # Just verify it ends with the expected filename
+        assert DEFAULT_STORAGE_PATH.name == "storage_state.json"
 
 
 class TestMinimumRequiredCookies:

@@ -277,10 +277,13 @@ We use different fixture types for different test needs:
 
 | Fixture | Scope | Use Case | Creates Resources? |
 |---------|-------|----------|-------------------|
-| `golden_notebook_id` | session | Read-only tests, download tests | No - uses existing |
+| `test_notebook_id` | session | Read-only tests, download tests | No - uses golden notebook |
 | `temp_notebook` | function | Mutation tests (CRUD) | Yes - auto-cleanup |
-| `test_workspace` | session | Shared state tests | Yes - session cleanup |
-| `generation_notebook` | session | Slow generation tests | Yes - session cleanup |
+| `test_workspace` | session | Generation tests that need writable notebook | Yes - session cleanup |
+
+**Key distinction:**
+- `test_notebook_id` → Points to **golden notebook** (read-only, pre-populated with artifacts)
+- `test_workspace` → Creates a **writable notebook** with sample content for generation tests
 
 ### Golden Notebook (`golden_notebook_id`)
 
@@ -328,6 +331,37 @@ async def test_add_and_delete_source(self, client, temp_notebook):
     await client.sources.delete(temp_notebook.id, source.id)
 ```
 
+### Test Workspace (`test_workspace`)
+
+**What it is:** A session-scoped writable notebook with pre-seeded content, suitable for generation tests.
+
+**Rationale:**
+- **Writable**: Unlike golden notebook, you can trigger generation operations
+- **Has content**: Pre-populated with sources so generation can work
+- **Session-scoped**: Created once per test session, not per test (saves time/quota)
+- **Shared**: Multiple tests use the same workspace
+
+**Use for:**
+- Artifact generation tests (audio, video, quiz, etc.)
+- Tests that need to write but don't need isolation
+
+**Why not golden notebook for generation?**
+The golden notebook is read-only. Attempting to generate artifacts on it fails because you don't own it. Generation tests need a writable notebook.
+
+**Why not temp_notebook for generation?**
+Creating a fresh notebook per test would:
+1. Waste time on setup/teardown
+2. Require adding sources each time (slow)
+3. Hit rate limits faster
+
+```python
+@pytest.mark.slow
+async def test_generate_quiz(self, client, test_workspace):
+    """Generation needs writable notebook with content."""
+    result = await client.artifacts.generate_quiz(test_workspace.id)
+    assert result is not None
+```
+
 ### Why Not Just Create Fresh Notebooks for Everything?
 
 1. **Generation tests would be too slow**: Creating audio from scratch takes 2-5 minutes. Using golden notebook's pre-existing artifacts makes download tests run in seconds.
@@ -341,11 +375,58 @@ async def test_add_and_delete_source(self, client, temp_notebook):
 Use markers to indicate fixture requirements:
 
 ```python
-@pytest.mark.golden   # Uses golden notebook, read-only
-@pytest.mark.stable   # Reliable, should always pass
-@pytest.mark.slow     # Takes > 30 seconds (generation)
-@pytest.mark.flaky    # Known to fail intermittently
+@pytest.mark.golden     # Uses golden notebook, read-only
+@pytest.mark.stable     # Reliable, should always pass
+@pytest.mark.slow       # Takes > 30 seconds (generation)
+@pytest.mark.exhaustive # Variant tests, excluded by default
 ```
+
+### Exhaustive Testing Strategy
+
+**The problem:** Each artifact type (audio, video, quiz, etc.) has multiple generation options (format, style, length). Testing every combination would:
+- Hit rate limits quickly
+- Take excessive time
+- Burn through quotas unnecessarily
+
+**The solution:** Tiered test coverage with `@pytest.mark.exhaustive`:
+
+```python
+# DEFAULT: One test per artifact type - always runs
+@pytest.mark.slow
+async def test_generate_audio_default(self, client, test_workspace):
+    result = await client.artifacts.generate_audio(test_workspace.id)
+    assert result is not None
+
+# EXHAUSTIVE: Variant tests - only run when explicitly requested
+@pytest.mark.slow
+@pytest.mark.exhaustive
+async def test_generate_audio_brief_short(self, client, test_workspace):
+    result = await client.artifacts.generate_audio(
+        test_workspace.id,
+        audio_format=AudioFormat.BRIEF,
+        audio_length=AudioLength.SHORT,
+    )
+    assert result is not None
+```
+
+**Running tests:**
+
+```bash
+# Normal run - one generation per type (quota-friendly)
+pytest tests/e2e -m "e2e and slow"
+
+# Full coverage - all variant combinations
+pytest tests/e2e -m "e2e and exhaustive"
+
+# Explicitly exclude exhaustive tests
+pytest tests/e2e -m "e2e and not exhaustive"
+```
+
+**Why this approach:**
+1. **Catches regressions**: Default tests verify each artifact type still works
+2. **Saves quota**: Most bugs appear in the core generation logic, not option handling
+3. **Fast feedback**: CI runs complete in reasonable time
+4. **Full coverage available**: Run exhaustive tests before releases or after API changes
 
 ### Environment Variables
 

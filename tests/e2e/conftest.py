@@ -185,7 +185,7 @@ async def cleanup_notebooks(created_notebooks, auth_tokens):
                 try:
                     await client.notebooks.delete(nb_id)
                 except Exception as e:
-                    warnings.warn(f"Failed to cleanup notebook {nb_id}: {e}")
+                    warnings.warn(f"Failed to cleanup notebook {nb_id}: {e}", stacklevel=2)
 
 
 # =============================================================================
@@ -409,7 +409,8 @@ async def generation_notebook_id(client):
         if not await _verify_notebook_exists(client, notebook_id):
             warnings.warn(
                 f"Generation notebook {notebook_id} from {source} no longer exists, "
-                "creating new one"
+                "creating new one",
+                stacklevel=2,
             )
             notebook_id = None
 
@@ -431,4 +432,6 @@ async def generation_notebook_id(client):
         try:
             await client.notebooks.delete(notebook_id)
         except Exception as e:
-            warnings.warn(f"Failed to delete generation notebook {notebook_id}: {e}")
+            warnings.warn(
+                f"Failed to delete generation notebook {notebook_id}: {e}", stacklevel=2
+            )

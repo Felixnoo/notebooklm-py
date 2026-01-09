@@ -827,7 +827,7 @@ class ArtifactsAPI:
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse audio artifact structure: {e}")
+            raise ValueError(f"Failed to parse audio artifact structure: {e}") from e
 
     async def download_video(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -905,7 +905,7 @@ class ArtifactsAPI:
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse video artifact structure: {e}")
+            raise ValueError(f"Failed to parse video artifact structure: {e}") from e
 
     async def download_infographic(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -967,7 +967,7 @@ class ArtifactsAPI:
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse infographic structure: {e}")
+            raise ValueError(f"Failed to parse infographic structure: {e}") from e
 
     async def download_slide_deck(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1021,7 +1021,7 @@ class ArtifactsAPI:
             return await self._download_url(pdf_url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse slide deck structure: {e}")
+            raise ValueError(f"Failed to parse slide deck structure: {e}") from e
 
     # =========================================================================
     # Management Operations

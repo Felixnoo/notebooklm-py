@@ -15,8 +15,8 @@ class TestClientInitialization:
     @pytest.mark.asyncio
     async def test_client_context_manager_closes(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
-            http = client._core._http_client
-        assert client._core._http_client is None
+            assert client._core._http_client is not None  # client is open
+        assert client._core._http_client is None  # closed after exit
 
     @pytest.mark.asyncio
     async def test_client_raises_if_not_initialized(self, auth_tokens):

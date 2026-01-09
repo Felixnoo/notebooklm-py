@@ -186,9 +186,6 @@ class TestRefreshAuth:
         )
 
         async with client:
-            old_csrf = client.auth.csrf_token
-            old_session = client.auth.session_id
-
             refreshed_auth = await client.refresh_auth()
 
             # Should have new tokens

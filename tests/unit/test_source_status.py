@@ -250,6 +250,8 @@ class TestWaitForSources:
                 raise SourceProcessingError(source_id, status=3)
             return Source(id=source_id, status=SourceStatus.READY)
 
-        with patch.object(sources_api, "wait_until_ready", side_effect=mock_wait):
-            with pytest.raises(SourceProcessingError):
-                await sources_api.wait_for_sources("nb_1", ["src_1", "src_2"], timeout=10.0)
+        with (
+            patch.object(sources_api, "wait_until_ready", side_effect=mock_wait),
+            pytest.raises(SourceProcessingError),
+        ):
+            await sources_api.wait_for_sources("nb_1", ["src_1", "src_2"], timeout=10.0)

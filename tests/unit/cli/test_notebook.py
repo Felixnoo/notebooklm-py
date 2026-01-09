@@ -199,16 +199,18 @@ class TestNotebookDelete:
             mock_client.notebooks.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
-                with patch(
+            with (
+                patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch(
                     "notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"
-                ):
-                    with patch("notebooklm.cli.notebook.clear_context") as mock_clear:
-                        with patch(
-                            "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-                        ) as mock_fetch:
-                            mock_fetch.return_value = ("csrf", "session")
-                            result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
+                ),
+                patch("notebooklm.cli.notebook.clear_context"),
+                patch(
+                    "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
+                ) as mock_fetch,
+            ):
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
 
             assert result.exit_code == 0
             assert "Cleared current notebook context" in result.output
@@ -498,12 +500,11 @@ class TestNotebookAsk:
             with patch(
                 "notebooklm.cli.helpers.get_context_path",
                 return_value=Path("/nonexistent/context.json"),
-            ):
-                with patch(
-                    "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-                ) as mock_fetch:
-                    mock_fetch.return_value = ("csrf", "session")
-                    result = runner.invoke(cli, ["ask", "-n", "nb_123", "What is this?"])
+            ), patch(
+                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["ask", "-n", "nb_123", "What is this?"])
 
             assert result.exit_code == 0
             assert "This is the answer" in result.output

@@ -172,7 +172,9 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                 try:
                     file_content = file_path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
-                    raise click.ClickException(f"File must be UTF-8 encoded: {content}")
+                    raise click.ClickException(
+                        f"File must be UTF-8 encoded: {content}"
+                    ) from None
                 file_title = title or file_path.name
             else:
                 detected_type = "file"
@@ -663,7 +665,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
                     json_output_response(data)
                 else:
                     console.print(f"[red]✗ Source not found:[/red] {e.source_id}")
-                raise SystemExit(1)
+                raise SystemExit(1) from None
 
             except SourceProcessingError as e:
                 if json_output:
@@ -676,7 +678,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
                     json_output_response(data)
                 else:
                     console.print(f"[red]✗ Source processing failed:[/red] {e.source_id}")
-                raise SystemExit(1)
+                raise SystemExit(1) from None
 
             except SourceTimeoutError as e:
                 if json_output:
@@ -691,6 +693,6 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
                 else:
                     console.print(f"[yellow]⚠ Timeout waiting for source:[/yellow] {e.source_id}")
                     console.print(f"[dim]Last status: {e.last_status}[/dim]")
-                raise SystemExit(2)
+                raise SystemExit(2) from None
 
     return _run()

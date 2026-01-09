@@ -413,7 +413,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
                     )
                 else:
                     console.print(f"[red]✗ Timeout after {timeout}s[/red]")
-                raise SystemExit(1)
+                raise SystemExit(1) from None
 
     return _run()
 

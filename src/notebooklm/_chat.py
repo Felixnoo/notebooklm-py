@@ -222,10 +222,9 @@ class ChatAPI:
         if goal == ChatGoal.CUSTOM and not custom_prompt:
             raise ValueError("custom_prompt is required when goal is CUSTOM")
 
-        if goal == ChatGoal.CUSTOM:
-            goal_array = [goal.value, custom_prompt]
-        else:
-            goal_array = [goal.value]
+        goal_array = (
+            [goal.value, custom_prompt] if goal == ChatGoal.CUSTOM else [goal.value]
+        )
 
         chat_settings = [goal_array, [response_length.value]]
         params = [

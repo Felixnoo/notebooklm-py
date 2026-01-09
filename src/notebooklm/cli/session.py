@@ -73,7 +73,7 @@ def register_session_commands(cli):
                 "  pip install notebooklm[browser]\n"
                 "  playwright install chromium"
             )
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
         storage_path = Path(storage) if storage else get_storage_path()
         browser_profile = get_browser_profile_dir()

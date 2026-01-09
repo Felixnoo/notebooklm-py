@@ -3,6 +3,7 @@
 Commands for managing the Claude Code skill integration.
 """
 
+import contextlib
 import re
 from importlib import resources
 from pathlib import Path
@@ -131,10 +132,8 @@ def uninstall():
     SKILL_DEST.unlink()
 
     # Remove the directory if empty
-    try:
+    with contextlib.suppress(OSError):
         SKILL_DEST_DIR.rmdir()
-    except OSError:
-        pass  # Directory not empty or other error
 
     console.print("[green]Uninstalled[/green] NotebookLM skill")
     console.print("Claude Code will no longer recognize NotebookLM commands.")

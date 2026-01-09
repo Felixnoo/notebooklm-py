@@ -247,7 +247,7 @@ def _load_storage_state(path: Path | None = None) -> dict[str, Any]:
             raise ValueError(
                 f"Invalid JSON in NOTEBOOKLM_AUTH_JSON environment variable: {e}\n"
                 f"Ensure the value is valid Playwright storage state JSON."
-            )
+            ) from e
         # Validate structure
         if not isinstance(storage_state, dict) or "cookies" not in storage_state:
             raise ValueError(
@@ -324,11 +324,7 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     )
 
     # Check if domain matches or is a subdomain of allowed suffixes
-    for suffix in allowed_suffixes:
-        if domain == suffix or domain.endswith(suffix):
-            return True
-
-    return False
+    return any(domain == suffix or domain.endswith(suffix) for suffix in allowed_suffixes)
 
 
 def load_httpx_cookies(path: Path | None = None) -> "httpx.Cookies":

@@ -68,7 +68,7 @@ while [[ $# -gt 0 ]]; do
             PYTEST_ARGS="$*"
             break
             ;;
-        3.1[0-9])
+        3.10|3.11|3.12|3.13|3.14)
             VERSIONS="$VERSIONS $1"
             shift
             ;;
@@ -95,10 +95,8 @@ fi
 TMPDIR=$(mktemp -d)
 
 cleanup() {
-    # Kill any running containers
-    for v in $VERSIONS; do
-        docker kill "$CONTAINER_PREFIX-$v" 2>/dev/null || true
-    done
+    # Kill any running containers with our prefix (more robust)
+    docker ps -q --filter "name=${CONTAINER_PREFIX}-" 2>/dev/null | xargs -r docker kill 2>/dev/null || true
     rm -rf "$TMPDIR"
 }
 

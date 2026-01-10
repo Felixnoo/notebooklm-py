@@ -230,6 +230,9 @@ async def temp_notebook(client, created_notebooks, cleanup_notebooks):
 # File to store auto-created generation notebook ID
 GENERATION_NOTEBOOK_ID_FILE = "generation_notebook_id"
 
+# Module-level state to ensure cleanup only runs once per session
+_generation_cleanup_done = False
+
 
 def _get_generation_notebook_id_path() -> Path:
     """Get the path to the generation notebook ID file."""
@@ -420,8 +423,11 @@ async def generation_notebook_id(client):
         _save_generation_notebook_id(notebook_id)
         auto_created = True
 
-    # Clean up artifacts and notes before tests
-    await _cleanup_generation_notebook(client, notebook_id)
+    # Clean up artifacts and notes before tests (only once per session)
+    global _generation_cleanup_done
+    if not _generation_cleanup_done:
+        await _cleanup_generation_notebook(client, notebook_id)
+        _generation_cleanup_done = True
 
     yield notebook_id
 

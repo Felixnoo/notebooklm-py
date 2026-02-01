@@ -58,6 +58,61 @@ notebooklm generate audio "制作一个有趣的播客" --wait
 notebooklm download audio ./播客.mp3
 ```
 
+### 关于 notebook use 命令的必要性
+
+在使用 `notebooklm ask`、`generate`、`download` 等命令之前，**通常需要先执行 `notebooklm use ID`** 命令来设置当前默认的笔记本。这是因为这些命令需要知道操作的目标笔记本是哪一个。
+
+#### 替代方法
+如果不想使用 `notebooklm use`，也可以在每个命令中通过 `--notebook` 参数明确指定笔记本 ID，例如：
+```bash
+notebooklm ask --notebook <笔记本ID> "你的问题"
+notebooklm generate audio --notebook <笔记本ID> "指令"
+```
+
+### 在多个笔记本之间切换
+
+#### 步骤 1：查看所有笔记本
+首先，使用以下命令列出所有可用的笔记本及其 ID：
+```bash
+notebooklm list
+```
+这会显示所有笔记本的标题和 ID。
+
+#### 步骤 2：切换到目标笔记本
+使用 `notebooklm use` 命令切换到你想要操作的笔记本：
+```bash
+notebooklm use <目标笔记本ID>
+```
+例如：
+```bash
+notebooklm use abc123def456
+```
+
+#### 示例工作流程
+
+```bash
+# 1. 列出所有笔记本
+notebooklm list
+
+# 2. 切换到第一个笔记本
+notebooklm use notebook1_id
+
+# 3. 在第一个笔记本中添加源
+notebooklm source add "https://example.com"
+
+# 4. 与第一个笔记本对话
+notebooklm ask "总结这个内容"
+
+# 5. 切换到第二个笔记本
+notebooklm use notebook2_id
+
+# 6. 在第二个笔记本中添加源
+notebooklm source add "https://another-example.com"
+
+# 7. 与第二个笔记本对话
+notebooklm ask "这个内容与之前的有什么不同？"
+```
+
 ### 简单 Python 脚本
 
 创建一个名为 `notebooklm_example.py` 的文件，内容如下：
